@@ -8,7 +8,6 @@
  * (at your option) any later version.
  */
 
-#include <sys/param.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <endian.h>

@@ -11,11 +11,6 @@
  * (at your option) any later version. 
  */
 
-/*
- * TODO:
- * - make longer passwords possible by tweaking our PRF for pbkdf2
- * - test on other platforms
- */
 
 #include <stdint.h>
 #include <endian.h>
@@ -33,7 +28,7 @@
 #include "pbkdf2-omac-serpent.h"
 
 
-#define VERSION		5
+#define VERSION		6
 
 
 /*

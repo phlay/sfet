@@ -45,7 +45,7 @@ int main()
 	/* test pbkdf2 */
 	for (i = 0; i < tablenum; i++) {
 		pbkdf2_hmac_sha256(check, 64,
-				   table[i].passwd, strlen(table[i].passwd),
+				   (uint8_t*)table[i].passwd, strlen(table[i].passwd),
 				   (uint8_t*)table[i].salt, strlen(table[i].salt),
 				   table[i].c);
 

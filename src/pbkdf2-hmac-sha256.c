@@ -65,7 +65,7 @@ hmac_sha256_done(sha256ctx *ctx, const uint8_t key[32], uint8_t result[32])
 
 void
 pbkdf2_hmac_sha256(uint8_t *out, size_t outlen,
-		   const char *passwd, size_t passlen,
+		   const uint8_t *passwd, size_t passlen,
 		   const uint8_t *salt, size_t saltlen,
 		   uint64_t iter)
 {
@@ -83,7 +83,7 @@ pbkdf2_hmac_sha256(uint8_t *out, size_t outlen,
 	 */
 	if (passlen > 32) {
 		sha256_init(&hmac);
-		sha256_add(&hmac, (uint8_t*)passwd, passlen);
+		sha256_add(&hmac, passwd, passlen);
 		sha256_done(&hmac, key);
 	} else {
 		memcpy(key, passwd, passlen);

@@ -23,9 +23,11 @@
 #include <err.h>
 
 #include "defaults.h"
+
 #include "utils.h"
 #include "eax-serpent.h"
 #include "pbkdf2-hmac-sha256.h"
+#include "readpass.h"
 
 
 #define VERSION		6
@@ -82,7 +84,7 @@ encrypt_file(FILE *in, FILE *out)
 	uint8_t		 buffer[DEF_BUFSIZE];
 	struct header	*header;
 
-	char		 passwd[DEF_MAXPASSLEN+2];
+	uint8_t		 passwd[DEF_MAXPASSLEN];
 	uint8_t		 nonce[DEF_NONCELEN];
 	uint8_t		 key[SERPENT_MAX_KEY_SIZE];
 	eax_serpent_t	 eax;
@@ -90,10 +92,13 @@ encrypt_file(FILE *in, FILE *out)
 
 	size_t		 len;
 	
-	
-	/* generate random nonce; since we actually need three nonces,
-	 * we use the first byte as counter.
-	 */
+	/* read password from tty (vartime, naturally!) */
+	if (read_pass_tty(passwd, sizeof(passwd), "Password", "Confirm") == -1) {
+		warnx("can't read password");
+		goto errout;
+	}
+
+	/* generate random nonce */
 	if (getrandom(nonce, DEF_NONCELEN) == -1) {
 		warnx("can't generate random nonce");
 		return -1;
@@ -104,14 +109,9 @@ encrypt_file(FILE *in, FILE *out)
 	if (conf_verbose > 1)
 		fprintf(stderr, "iterations: %d\n", conf_iter);
 
-	/* read password from tty (vartime, naturally!) */
-	if (read_pass_tty(passwd, sizeof(passwd), "Password", "Confirm") == -1) {
-		warnx("can't read password");
-		goto errout;
-	}
 
 	/* derive encryption key and init encryption (vartime) */
-	pbkdf2_hmac_sha256(key, sizeof(key), passwd, strlen(passwd),
+	pbkdf2_hmac_sha256(key, sizeof(key), passwd, sizeof(passwd),
 			   nonce, sizeof(nonce), conf_iter);
 	
 	/* initialize eax-serpent-mode */
@@ -196,7 +196,7 @@ decrypt_file(FILE *in, FILE *out)
 	uint8_t			 buffer[DEF_BUFSIZE + 16];
 	const struct header	*header = (const struct header *)buffer;
 
-	char			 passwd[DEF_MAXPASSLEN+2];
+	uint8_t			 passwd[DEF_MAXPASSLEN];
 
 	uint8_t			 nonce[DEF_NONCELEN];
 	uint8_t			 tag[16];
@@ -243,7 +243,7 @@ decrypt_file(FILE *in, FILE *out)
 
 	
 	/* derive encryption key and init encryption */
-	pbkdf2_hmac_sha256(key, sizeof(key), passwd, strlen(passwd),
+	pbkdf2_hmac_sha256(key, sizeof(key), passwd, sizeof(passwd),
 			   nonce, sizeof(nonce), be32toh(header->iter));
 	
 	if (eax_serpent_init(&eax, key, sizeof(key)) == -1) {

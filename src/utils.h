@@ -15,6 +15,5 @@ int	 exists(const char *path);
 
 void	burn(void *, size_t);
 int	getrandom(uint8_t *, size_t);
-int	read_pass_tty(char *, size_t, const char *, const char *);
 
 #endif

@@ -6,7 +6,7 @@
 
 void
 pbkdf2_hmac_sha256(uint8_t *out, size_t outlen,
-		   const char *passwd, size_t passlen,
+		   const uint8_t *passwd, size_t passlen,
 		   const uint8_t *salt, size_t saltlen,
 		   uint64_t iter);
 

@@ -23,7 +23,7 @@
 
 
 
-void
+static void
 hmac_sha256_init(sha256ctx *ctx, const uint8_t key[32])
 {
 	uint8_t pad[64];
@@ -40,7 +40,7 @@ hmac_sha256_init(sha256ctx *ctx, const uint8_t key[32])
 }
 
 
-void
+static void
 hmac_sha256_done(sha256ctx *ctx, const uint8_t key[32], uint8_t result[32])
 {
 	uint8_t pad[64];

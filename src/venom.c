@@ -25,7 +25,7 @@
 #include "defaults.h"
 #include "utils.h"
 #include "eax-serpent.h"
-#include "pbkdf2-omac-serpent.h"
+#include "pbkdf2-hmac-sha256.h"
 
 
 #define VERSION		6
@@ -104,18 +104,15 @@ encrypt_file(FILE *in, FILE *out)
 	if (conf_verbose > 1)
 		fprintf(stderr, "iterations: %d\n", conf_iter);
 
-	/* read password from tty */
+	/* read password from tty (vartime, naturally!) */
 	if (read_pass_tty(passwd, sizeof(passwd), "Password", "Confirm") == -1) {
 		warnx("can't read password");
 		goto errout;
 	}
 
-	/* derive encryption key and init encryption */
-	if (pbkdf2_omac_serpent(key, sizeof(key), passwd,
-				nonce, sizeof(nonce), conf_iter) == -1) {
-		warnx("key expansion failed");
-		goto errout;
-        }
+	/* derive encryption key and init encryption (vartime) */
+	pbkdf2_hmac_sha256(key, sizeof(key), passwd, strlen(passwd),
+			   nonce, sizeof(nonce), conf_iter);
 	
 	/* initialize eax-serpent-mode */
 	if (eax_serpent_init(&eax, key, sizeof(key)) == -1) {
@@ -246,11 +243,8 @@ decrypt_file(FILE *in, FILE *out)
 
 	
 	/* derive encryption key and init encryption */
-	if (pbkdf2_omac_serpent(key, sizeof(key), passwd, nonce,
-				sizeof(nonce), be32toh(header->iter)) == -1) {
-		warnx("pbkdf2 failed");
-		goto errout;
-	}
+	pbkdf2_hmac_sha256(key, sizeof(key), passwd, strlen(passwd),
+			   nonce, sizeof(nonce), be32toh(header->iter));
 	
 	if (eax_serpent_init(&eax, key, sizeof(key)) == -1) {
 		warnx("initializing eax-serpent mode failed");

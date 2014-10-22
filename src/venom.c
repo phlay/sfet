@@ -40,10 +40,10 @@
 struct header {
 	uint8_t		magic[5];		/* = VENOM */
 	uint16_t	version;
-	uint32_t	iter;
+	uint64_t	iter;
 	uint8_t		nonce[DEF_NONCELEN];
 	uint8_t		pwcheck[4];
-} __attribute__((packed));
+};
 
 
 /* myname is just the basename of argv[0] made global */
@@ -61,13 +61,13 @@ int		 conf_force = 0;			/* -f */
 /* printhex - simple function to print binary arrays in hex.
  */
 static void
-printhex(const char *label, const uint8_t *vec, size_t len)
+printhex(const char *label, const uint8_t *vec, size_t n)
 {
 	int i;
 	
         fprintf(stderr, "%s: ", label);
-        if (len)
-                for (i = 0; i < len; i++)
+        if (n)
+                for (i = 0; i < n; i++)
                         fprintf(stderr, "%02x", vec[i]);
         else
                 fputc('-', stderr);
@@ -77,12 +77,12 @@ printhex(const char *label, const uint8_t *vec, size_t len)
 
 
 
-
 static int
 encrypt_file(FILE *in, FILE *out)
 {
 	uint8_t		 buffer[DEF_BUFSIZE];
-	struct header	*header;
+	struct header	 header;
+	size_t		 n;
 
 	uint8_t		 passwd[DEF_MAXPASSLEN];
 	uint8_t		 nonce[DEF_NONCELEN];
@@ -90,7 +90,6 @@ encrypt_file(FILE *in, FILE *out)
 	eax_serpent_t	 eax;
 	uint8_t		 tag[16];
 
-	size_t		 len;
 	
 	/* read password from tty (vartime, naturally!) */
 	if (read_pass_tty(passwd, sizeof(passwd), "Password", "Confirm") == -1) {
@@ -122,29 +121,51 @@ encrypt_file(FILE *in, FILE *out)
 
 	
 	/* fill header */
-	header = (struct header *)buffer;
-	memcpy(header->magic, "VENOM", 5);
-	header->version = htobe16(VERSION);
-	header->iter = htobe32(conf_iter);
-	memcpy(header->nonce, nonce, DEF_NONCELEN);
-
+	memcpy(header.magic, "VENOM", 5);
+	header.version = htobe16(VERSION);
+	header.iter = htobe64(conf_iter);
+	memcpy(header.nonce, nonce, DEF_NONCELEN);
 
 	/* authenticate magic and nonce for password check */
 	nonce[0]++;
 	eax_serpent_nonce(&eax, nonce, sizeof(nonce));
-	eax_serpent_header(&eax, header->magic, 5);
-	eax_serpent_header(&eax, header->nonce, DEF_NONCELEN);
+	eax_serpent_header(&eax, header.magic, 5);
+	eax_serpent_header(&eax, header.nonce, DEF_NONCELEN);
 	eax_serpent_tag(&eax, tag);
-
-	memcpy(header->pwcheck, tag, sizeof(header->pwcheck)); 
+	memcpy(header.pwcheck, tag, sizeof(header.pwcheck));
 	
 
 	/* write header to output */
-	if (fwrite(buffer, sizeof(struct header), 1, out) != 1) {
-		warn("error writing header");
+	n = fwrite(header.magic, sizeof(header.magic), 1, out);
+	if (n != 1) {
+		warn("error writing magic");
 		goto errout;
 	}
-	
+
+	n = fwrite(&header.version, sizeof(header.version), 1, out);
+	if (n != 1) {
+		warn("error writing file version");
+		goto errout;
+	}
+
+	n = fwrite(&header.iter, sizeof(header.iter), 1, out);
+	if (n != 1) {
+		warn("error writing iteration count");
+		goto errout;
+	}
+
+	n = fwrite(header.nonce, sizeof(header.nonce), 1, out);
+	if (n != 1) {
+		warn("error writing nonce");
+		goto errout;
+	}
+
+	n = fwrite(header.pwcheck, sizeof(header.pwcheck), 1, out);
+	if (n != 1) {
+		warn("error writing password check");
+		goto errout;
+	}
+
 
 	/* next nonce, for encrypting our data */
 	nonce[0]++;
@@ -152,10 +173,10 @@ encrypt_file(FILE *in, FILE *out)
 	
 
 	/* main loop */
-	while ((len = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE, in)) != 0) {
-		eax_serpent_encrypt(&eax, buffer, buffer, len);
+	while ((n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE, in)) != 0) {
+		eax_serpent_encrypt(&eax, buffer, buffer, n);
 		
-		if (fwrite(buffer, sizeof(uint8_t), len, out) != len) {
+		if (fwrite(buffer, sizeof(uint8_t), n, out) != n) {
 			warn("can't write to output file");
 			goto errout;
 		}
@@ -193,46 +214,71 @@ errout:
 static int
 decrypt_file(FILE *in, FILE *out)
 {
-	uint8_t			 buffer[DEF_BUFSIZE + 16];
-	const struct header	*header = (const struct header *)buffer;
+	uint8_t		 buffer[DEF_BUFSIZE + 16];
+	struct header	 header;
+	size_t		 n;
 
-	uint8_t			 passwd[DEF_MAXPASSLEN];
+	uint8_t		 passwd[DEF_MAXPASSLEN];
 
-	uint8_t			 nonce[DEF_NONCELEN];
-	uint8_t			 tag[16];
+	uint8_t		 nonce[DEF_NONCELEN];
+	uint8_t		 tag[16];
 
-	uint8_t			 key[SERPENT_MAX_KEY_SIZE];
-	eax_serpent_t		 eax;
-
-	size_t			 len;
+	uint8_t		 key[SERPENT_MAX_KEY_SIZE];
+	eax_serpent_t	 eax;
 	
-	/* read header from file */
-	if (fread(buffer, sizeof(struct header), 1, in) != 1) {
-		warn("can't read from input file");
-		return -1;
-	}
 
 	/* is this really a file from us? */
-	if (memcmp(header->magic, "VENOM", 5) != 0) {
+	n = fread(header.magic, sizeof(header.magic), 1, in);
+	if (n != 1) {
+		warn("can't read magic from file");
+		return -1;
+	}
+	if (memcmp(header.magic, "VENOM", 5) != 0) {
 		warnx("not a venom encrypted file");
 		return -1;
 	}
 
+
 	/* check version */
-	if (be16toh(header->version) != VERSION) {
-		warnx("wrong file version %d (need %d)",
-		      be16toh(header->version), VERSION);
+	n = fread(&header.version, sizeof(header.version), 1, in);
+	if (n != 1) {
+		warn("can't read version from file");
 		return -1;
 	}
-		
-	/* copy nonce, since we are changing it */
-	memcpy(nonce, header->nonce, DEF_NONCELEN);
-	
-	if (conf_verbose > 1)
-		printhex("nonce", nonce, sizeof(nonce));
+	if (be16toh(header.version) != VERSION) {
+		warnx("wrong file version %d (need %d)",
+		      be16toh(header.version), VERSION);
+		return -1;
+	}
 
+	/* read iteration counter for pbkdf2 */
+	n = fread(&header.iter, sizeof(header.iter), 1, in);
+	if (n != 1) {
+		warn("can't read iterations");
+		return -1;
+	}
 	if (conf_verbose > 1)
-		fprintf(stderr, "iterations: %d\n", be32toh(header->iter));
+		fprintf(stderr, "iterations: %ld\n", be64toh(header.iter));
+
+
+	/* read nonce */
+	n = fread(header.nonce, sizeof(header.nonce), 1, in);
+	if (n != 1) {
+		warn("can't read nonce");
+		return -1;
+	}
+	if (conf_verbose > 1)
+		printhex("nonce", header.nonce, sizeof(header.nonce));
+
+	/* and make a working copy */
+	memcpy(nonce, header.nonce, sizeof(nonce));
+
+	/* read pwcheck */
+	n = fread(header.pwcheck, sizeof(header.pwcheck), 1, in);
+	if (n != 1) {
+		warn("can't read pwcheck");
+		return -1;
+	}
 
 	
 	/* read password */
@@ -244,7 +290,7 @@ decrypt_file(FILE *in, FILE *out)
 	
 	/* derive encryption key and init encryption */
 	pbkdf2_hmac_sha256(key, sizeof(key), passwd, sizeof(passwd),
-			   nonce, sizeof(nonce), be32toh(header->iter));
+			   nonce, sizeof(nonce), be64toh(header.iter));
 	
 	if (eax_serpent_init(&eax, key, sizeof(key)) == -1) {
 		warnx("initializing eax-serpent mode failed");
@@ -255,12 +301,12 @@ decrypt_file(FILE *in, FILE *out)
 	/* check for correct password */
 	nonce[0]++;
 	eax_serpent_nonce(&eax, nonce, DEF_NONCELEN);
-	eax_serpent_header(&eax, header->magic, 5);
-	eax_serpent_header(&eax, header->nonce, DEF_NONCELEN);
+	eax_serpent_header(&eax, header.magic, 5);
+	eax_serpent_header(&eax, header.nonce, DEF_NONCELEN);
 	eax_serpent_tag(&eax, tag);
 
 	/* check header tag */
-	if (memcmp(header->pwcheck, tag, sizeof(header->pwcheck)) != 0) {
+	if (memcmp(header.pwcheck, tag, sizeof(header.pwcheck)) != 0) {
 		warnx("wrong password");
 		goto errout;
 	}
@@ -275,8 +321,8 @@ decrypt_file(FILE *in, FILE *out)
 	 * tag-buffer behind our normal read buffer.
 	 */
 	
-	len = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE+16, in);
-	if (len < 16) {
+	n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE+16, in);
+	if (n < 16) {
 		if (ferror(in))
 			warn("can't read from input file");
 		else
@@ -286,25 +332,25 @@ decrypt_file(FILE *in, FILE *out)
 	}
 
 	/* subtract 16, because this could already be the final tag */
-	len -= 16;
+	n -= 16;
 
-	/* main loop: buffer always holds len+16 bytes of data */
+	/* main loop: buffer always holding n+16 bytes of data */
 	for (;;) {
-		eax_serpent_decrypt(&eax, buffer, buffer, len);
-		if (fwrite(buffer, sizeof(uint8_t), len, out) != len) {
+		eax_serpent_decrypt(&eax, buffer, buffer, n);
+		if (fwrite(buffer, sizeof(uint8_t), n, out) != n) {
 			warn("can't write to output file");
 			goto errout;
 		}
 
 		/* copy tag-buffer to beginning */
-		memcpy(buffer, buffer+len, 16);
-		if (len < DEF_BUFSIZE)
+		memcpy(buffer, buffer+n, 16);
+		if (n < DEF_BUFSIZE)
 			break;
 
 		/* we are not done: read next chunk of data behind the 16 byte
 		 * we still have in our buffer
 		 */
-		len = fread(buffer+16, sizeof(uint8_t), DEF_BUFSIZE, in);
+		n = fread(buffer+16, sizeof(uint8_t), DEF_BUFSIZE, in);
 	}
 	if (ferror(in)) {
 		warn("can't read from input file");
@@ -320,7 +366,7 @@ decrypt_file(FILE *in, FILE *out)
 	if (memcmp(tag, buffer, 16) != 0) {
 		warnx("file is corrupted!");
 		if (conf_verbose > 0)
-			printhex("read tag", buffer+len, 16);
+			printhex("file tag", buffer+n, 16);
 
 		goto errout;
 	}

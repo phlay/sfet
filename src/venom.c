@@ -26,7 +26,7 @@
 
 #include "utils.h"
 #include "eax-serpent.h"
-#include "pbkdf2-hmac-sha256.h"
+#include "pbkdf2-hmac-sha512.h"
 #include "readpass.h"
 
 
@@ -110,7 +110,7 @@ encrypt_file(FILE *in, FILE *out)
 
 
 	/* derive encryption key and init encryption (vartime) */
-	pbkdf2_hmac_sha256(key, sizeof(key), passwd, sizeof(passwd),
+	pbkdf2_hmac_sha512(key, sizeof(key), passwd, sizeof(passwd),
 			   nonce, sizeof(nonce), conf_iter);
 	
 	/* initialize eax-serpent-mode */
@@ -289,7 +289,7 @@ decrypt_file(FILE *in, FILE *out)
 
 	
 	/* derive encryption key and init encryption */
-	pbkdf2_hmac_sha256(key, sizeof(key), passwd, sizeof(passwd),
+	pbkdf2_hmac_sha512(key, sizeof(key), passwd, sizeof(passwd),
 			   nonce, sizeof(nonce), be64toh(header.iter));
 	
 	if (eax_serpent_init(&eax, key, sizeof(key)) == -1) {

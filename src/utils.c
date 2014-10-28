@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <errno.h>
+
 #include <err.h>
 
 #include "defaults.h"
@@ -61,11 +65,27 @@ burn(void *buf, size_t len)
 }
 
 
-/*
- * XXX we need the getrandom system call
- */
+#ifdef HAVE_GETRANDOM
+
+
 int
-getrandom(uint8_t *buf, size_t len)
+secrand(void *buf, size_t len)
+{
+	int rc;
+
+	if (len > 256)
+		return -1;
+
+	if (getrandom(buf, len, GRND_RANDOM|GRND_BLOCK) == -1)
+		return -1;
+
+	return 0;
+}
+
+#else
+
+int
+secrand(void *buf, size_t len)
 {
         FILE *dev;
 
@@ -82,3 +102,4 @@ getrandom(uint8_t *buf, size_t len)
         return 0;
 }
 
+#endif

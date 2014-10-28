@@ -98,7 +98,7 @@ encrypt_file(FILE *in, FILE *out)
 	}
 
 	/* generate random nonce */
-	if (getrandom(nonce, DEF_NONCELEN) == -1) {
+	if (secrand(nonce, DEF_NONCELEN) == -1) {
 		warnx("can't generate random nonce");
 		return -1;
 	}

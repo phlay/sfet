@@ -14,6 +14,6 @@ int	 exists(const char *path);
 
 
 void	burn(void *, size_t);
-int	getrandom(uint8_t *, size_t);
+int	secrand(void *, size_t);
 
 #endif

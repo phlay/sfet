@@ -288,8 +288,8 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 			return -1;
 		}
 
-		/* copy tag-buffer to beginning XXX can these overlap? */
-		memcpy(buffer, buffer+n, 16);
+		/* copy tag-buffer to beginning */
+		memmove(buffer, buffer+n, 16);
 		if (n < DEF_BUFSIZE)
 			break;
 

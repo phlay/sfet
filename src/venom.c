@@ -320,15 +320,15 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 }
 
 
+
 void
 usage()
 {
-	fprintf(stderr, "Usage: venom [-vfed] [-i <iter>] [<input>] [<output>]\n\n");
+	fprintf(stderr, "Usage: venom [-edsvf] [-i <iter>] [<input>] [<output>]\n\n");
 
 	fprintf(stderr, "main mode:\n");
 	fprintf(stderr, "  -e\tencrypt\n");
 	fprintf(stderr, "  -d\tdecrypt\n");
-	fprintf(stderr, "  -c\tcheck tag\n");
 	fprintf(stderr, "  -s\tshow file metadata\n\n");
 
 	fprintf(stderr, "options:\n");
@@ -368,7 +368,7 @@ main(int argc, char *argv[])
 	 * parse arguments
 	 */
 
-	while ((rc = getopt(argc, argv, "hedcsvfi:")) != -1) {
+	while ((rc = getopt(argc, argv, "hedsvfi:")) != -1) {
 		switch (rc) {
 		case 'h':
 			usage();
@@ -387,7 +387,6 @@ main(int argc, char *argv[])
 
 		case 'e':
 		case 'd':
-		case 'c':
 		case 's':
 			mode = rc;
 			break;
@@ -398,7 +397,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	/* check configuration parameters XXX should this go down to header check? */
+	/* check configuration parameters */
 	if (keyparam.iter < 1024)
 		errx(1, "illegal pkbdf2 iteration number: %lu", keyparam.iter);
 
@@ -445,7 +444,7 @@ main(int argc, char *argv[])
 		uint8_t tag[16];
 
 		/* show key param values */
-		fprintf(stderr, "iteration: %ld\n", keyparam.iter);
+		fprintf(stderr, "iterations: %ld\n", keyparam.iter);
 		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
 		printhex("pwcheck", keyparam.pwcheck, sizeof(keyparam.pwcheck));
 
@@ -478,8 +477,16 @@ main(int argc, char *argv[])
 
 
 	/* generate nonce */
-	if (mode == 'e')
-		secrand(keyparam.nonce, sizeof(keyparam.nonce));
+	if (mode == 'e') {
+		rc = secrand(keyparam.nonce, sizeof(keyparam.nonce));
+		if (rc == -1)
+			errx(1, "can't read random");
+	}
+
+	if (verbose > 1) {
+		fprintf(stderr, "iterations: %ld\n", keyparam.iter);
+		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
+	}
 
 
 	/* init encryption */
@@ -518,9 +525,6 @@ main(int argc, char *argv[])
 		rc = decrypt_stream(in, out, &cipher, verbose);
 		if (rc == -1)
 			warnx("decryption failed");
-		break;
-	case 'c':
-		errx(1, "file check not yet implemented");
 		break;
 	}
 

@@ -20,6 +20,7 @@
 #include <string.h>
 #include <libgen.h>
 
+#include <errno.h>
 #include <err.h>
 
 #include "defaults.h"
@@ -74,31 +75,31 @@ read_header(FILE *in, struct keyparam *kp)
 	/* is this really a file from us? */
 	n = fread(magic, sizeof(magic), 1, in);
 	if (n != 1) {
-		warn("can't read magic");
+		warnx("can't read magic");
 		return -1;
 	}
 	if (memcmp(magic, "VENOM", 5) != 0) {
 		warnx("not a venom encrypted file");
-		return -2;
+		return -1;
 	}
 
 
 	/* check version */
 	n = fread(&version, sizeof(version), 1, in);
 	if (n != 1) {
-		warn("can't read version from file");
+		warnx("can't read version from file");
 		return -1;
 	}
 	if (be16toh(version) != VERSION) {
 		warnx("wrong file version %d (need %d)",
 		      be16toh(version), VERSION);
-		return -2;
+		return -1;
 	}
 
 	/* read iteration counter for pbkdf2 */
 	n = fread(&iter, sizeof(iter), 1, in);
 	if (n != 1) {
-		warn("can't read pbkdf2 iteration number");
+		warnx("can't read pbkdf2 iteration number");
 		return -1;
 	}
 	kp->iter = be64toh(iter);
@@ -107,14 +108,14 @@ read_header(FILE *in, struct keyparam *kp)
 	/* read nonce */
 	n = fread(kp->nonce, sizeof(kp->nonce), 1, in);
 	if (n != 1) {
-		warn("can't read nonce");
+		warnx("can't read nonce");
 		return -1;
 	}
 
 	/* read pwcheck */
 	n = fread(kp->pwcheck, sizeof(kp->pwcheck), 1, in);
 	if (n != 1) {
-		warn("can't read pwcheck");
+		warnx("can't read pwcheck");
 		return -1;
 	}
 
@@ -287,7 +288,7 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 			return -1;
 		}
 
-		/* copy tag-buffer to beginning */
+		/* copy tag-buffer to beginning XXX can these overlap? */
 		memcpy(buffer, buffer+n, 16);
 		if (n < DEF_BUFSIZE)
 			break;
@@ -345,8 +346,8 @@ main(int argc, char *argv[])
 	int verbose = 0;
 	int force = 0;
 
-	char *inputfn = NULL;
-	char *outputfn = NULL;
+	char *inputfn = "-";
+	char *outputfn = "-";
 
 	FILE *in, *out;
 
@@ -387,7 +388,7 @@ main(int argc, char *argv[])
 		case 'e':
 		case 'd':
 		case 'c':
-		case 't':
+		case 's':
 			mode = rc;
 			break;
 
@@ -431,18 +432,30 @@ main(int argc, char *argv[])
 
 	/* read & check header */
 	if (mode != 'e') {
-		rc = read_header(in, &keyparam);
-		if (rc == -1)
-			err(1, "%s: can't read file header", inputfn);
-		if (rc == -2)
-			errx(1, "%s: corrupt header", inputfn);
+		if (read_header(in, &keyparam) == -1) {
+			/* error reading input file? */
+			if (ferror(in))
+				err(1, "%s: can't read from file", inputfn);
+			exit(1);
+		}
 	}
 
 
 	if (mode == 's') {
-		/* show header */
+		uint8_t tag[16];
+
+		/* show key param values */
+		fprintf(stderr, "iteration: %ld\n", keyparam.iter);
+		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
+		printhex("pwcheck", keyparam.pwcheck, sizeof(keyparam.pwcheck));
 
 		/* seek file and show tag */
+		if (fseek(in, -16, SEEK_END) == -1)
+			err(1, "%s: can't seek file", inputfn);
+		if (fread(tag, sizeof(tag), 1, in) != 1)
+			err(1, "can't read tag");
+
+		printhex("tag", tag, 16);
 
 		return 0;
 	}
@@ -451,7 +464,7 @@ main(int argc, char *argv[])
 	/* 
 	 * check if output file already exists.. but do not open yet
 	 */
-	if (outputfn && strcmp(outputfn, "-") != 0 && !force && exists(outputfn))
+	if (strcmp(outputfn, "-") != 0 && !force && exists(outputfn))
 		errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
 
 
@@ -512,10 +525,10 @@ main(int argc, char *argv[])
 	}
 
 	/* close files */
-	if (inputfn && strcmp(inputfn, "-") != 0)
+	if (strcmp(inputfn, "-") != 0)
 		fclose(in);
 
-	if (outputfn && strcmp(outputfn, "-") != 0) {
+	if (strcmp(outputfn, "-") != 0) {
 		fclose(out);
 
 		/* if encryption/decryption failed, unlink outputfn */

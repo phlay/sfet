@@ -8,6 +8,5 @@
 
 #define DEF_ITERATION	256000
 #define DEF_NONCELEN	16
-#define DEF_MAXPASSLEN	512
 
 #endif

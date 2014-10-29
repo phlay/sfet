@@ -15,10 +15,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <sys/syscall.h>
 #include <unistd.h>
-#include <errno.h>
+#include <fcntl.h>
 
 #include <err.h>
 
@@ -64,42 +62,69 @@ burn(void *buf, size_t len)
 	memset(buf, 0, len);
 }
 
+#ifndef HAVE_GETRANDOM
 
-#ifdef HAVE_GETRANDOM
+#define GRND_NONBLOCK	1
+#define GRND_RANDOM	2
+
+/*
+ * getrandom - very simple emulation of linux syscall until i get the 
+ * real thing.
+ */
+int 
+getrandom(void *buf, size_t buflen, unsigned int flags)
+{
+	const char *devname = (flags & GRND_RANDOM) ? "/dev/random" : "/dev/urandom";
+	int devflag = 0;
+	int dev;
+	int rval;
+
+	if (flags & GRND_NONBLOCK)
+		devflag |= O_NONBLOCK;
+
+	dev = open(devname, devflag);
+	if (dev == -1)
+		return -1;
+
+	rval = read(dev, buf, buflen);
+
+	close(dev);
+
+	return rval;
+}
+
+#endif
+
 
 
 int
 secrand(void *buf, size_t len)
 {
+	uint8_t *ptr = (uint8_t *)buf;
+	int n;
 	int rc;
 
 	if (len > 256)
 		return -1;
 
-	if (getrandom(buf, len, GRND_RANDOM|GRND_BLOCK) == -1)
+	n = getrandom(ptr, len, GRND_RANDOM|GRND_NONBLOCK);
+	if (n == -1)
 		return -1;
+	if (n == len)
+		return 0;
+
+
+	fprintf(stderr, "waiting for random... ");
+	while (n < len) {
+		rc = getrandom(ptr+n, len-n, GRND_RANDOM);
+		if (rc == -1) {
+			fprintf(stderr, "error\n");
+			return -1;
+		}
+
+		n += rc;
+	}
+	fprintf(stderr, "done\n");
 
 	return 0;
 }
-
-#else
-
-int
-secrand(void *buf, size_t len)
-{
-        FILE *dev;
-
-        dev = fopen(DEF_RANDDEV, "r");
-        if (dev == NULL)
-                return -1;
-
-        if (fread(buf, sizeof(uint8_t), len, dev) != len) {
-                fclose(dev);
-                return -1;
-        }
-
-        fclose(dev);
-        return 0;
-}
-
-#endif

@@ -3,7 +3,6 @@
 
 #include "serpent.h"
 
-#define DEF_RANDDEV	"/dev/random"
 #define DEF_BUFSIZE	1048576
 
 #define DEF_ITERATION	256000

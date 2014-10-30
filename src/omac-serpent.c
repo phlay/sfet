@@ -17,7 +17,7 @@
 
 /*
  * xtimes - helper function for omac_serpent_setkey()
- * 
+ *
  * The input e is interpreted as element of GF(2^128) with minimal polynom
  * X^128 + X^7 + X^2 + X + 1 (= (1<<128) | 0x87) and e*X is calculated and
  * returned in out.
@@ -32,7 +32,7 @@ xtimes(uint8_t out[16], const uint8_t e[16])
 	 * is set and to 0 otherwise, without leaking timing information.
 	 */
 	carry = ~((e[0] >> 7)-1) & 0x87;
-	
+
 	for (i = 15; i >= 0; i--) {
 		temp = (e[i] >> 7) & 0x01;
 		out[i] = (e[i] << 1) ^ carry;
@@ -49,12 +49,12 @@ omac_serpent_setkey(omac_serpent_key_t *omac_key, const uint32_t *expkey)
 {
 	/* copy expanded serpent key */
 	memcpy(omac_key->expkey, expkey, SERPENT_EXPKEY_WORDS * sizeof(uint32_t));
-	
+
 	/* last block in OMAC is xor-ed with B:=X*encrypt(0^128) if it
 	 * is complete and with P:=X^2*encrypt(0^128) otherwise. The
 	 * multiplication with X is done in a special galois-field
 	 * (see xtimes above).
-	 */	
+	 */
 	memset(omac_key->B, 0, 16);
 	serpent_encrypt(expkey, omac_key->B, omac_key->B);
 	xtimes(omac_key->B, omac_key->B);
@@ -90,7 +90,7 @@ omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
 			omac->buf[omac->fill++] = *data++;
 			len--;
 		}
-		
+
 		/* not even enough data to fillup buffer? */
 		if (omac->fill < 16)
 			return;
@@ -100,7 +100,7 @@ omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
 		for (i = 0; i < 16; i++)
 			omac->tag[i] ^= omac->buf[i];
 	}
-		
+
 	/* now loop over data */
 	for (; len >= 16; len -= 16) {
 		serpent_encrypt(key->expkey, omac->tag, omac->tag);
@@ -111,7 +111,7 @@ omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
 	/* copy left-over in our buffer */
 	for (i = 0; i < len; i++)
 		omac->buf[i] = *data++;
-	
+
 	omac->fill = len;
 }
 
@@ -121,7 +121,7 @@ omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
  *
  * NOTE A: After using this function, the context must be reset with
  *	   omac_serpent_init().
- * 
+ *
  * NOTE B: if the message is 0 bytes long, we do NOT pad it (even
  * 	   though the EAX paper states to do so), because otherwise
  * 	   the test vectors (the first one from the same paper) won't
@@ -139,10 +139,10 @@ omac_serpent_finalize(omac_serpent_t *omac,
 		serpent_encrypt(key->expkey, omac->tag, omac->tag);
 		for (i = 0; i < omac->fill; i++)
 			omac->tag[i] ^= omac->buf[i];
-		
+
 		/* pad */
 		omac->tag[i] ^= 0x80;
-		
+
 		for (i = 0; i < 16; i++)
 			omac->tag[i] ^= key->P[i];
 

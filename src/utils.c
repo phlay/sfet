@@ -6,9 +6,9 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version. 
+ * (at your option) any later version.
  */
- 
+
 #include <sys/stat.h>
 
 #include <stdint.h>
@@ -32,7 +32,7 @@ x_malloc(size_t size)
         rval = malloc(size);
         if (rval == NULL)
                 err(1, "can't allocate memory");
-        
+
         return rval;
 }
 
@@ -68,10 +68,10 @@ burn(void *buf, size_t len)
 #define GRND_RANDOM	2
 
 /*
- * getrandom - very simple emulation of linux syscall until i get the 
+ * getrandom - very simple emulation of linux syscall until i get the
  * real thing.
  */
-int 
+int
 getrandom(void *buf, size_t buflen, unsigned int flags)
 {
 	const char *devname = (flags & GRND_RANDOM) ? "/dev/random" : "/dev/urandom";
@@ -94,7 +94,6 @@ getrandom(void *buf, size_t buflen, unsigned int flags)
 }
 
 #endif
-
 
 
 int

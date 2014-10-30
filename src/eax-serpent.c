@@ -5,7 +5,7 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version. 
+ * (at your option) any later version.
  */
 
 #include <stdint.h>
@@ -41,7 +41,7 @@ serpent_ctr(eax_serpent_t *eax, uint8_t *dst, const uint8_t *src, size_t len)
 		}
 		if (eax->ctrused < 16)
 			return;
-		
+
 		/* advance and encrypt counter */
 		for (i = 15; i >= 0 && ++eax->ctr[i] == 0; i--);
 		serpent_encrypt(eax->key, eax->ctrenc, eax->ctr);
@@ -51,16 +51,16 @@ serpent_ctr(eax_serpent_t *eax, uint8_t *dst, const uint8_t *src, size_t len)
 	 * now eax->ctrenc is completly used. eax->ctrused may be 16
 	 * at this point, but this will be fixed after the mainloop
 	 */
-	
+
 	/* mainloop: encrypt src to dst in 16 byte chunks  */
 	for (; len >= 16; len -= 16) {
 		for (i = 0; i < 16; i++)
 			*dst++ = *src++ ^ eax->ctrenc[i];
-		
+
 		for (i = 15; i >= 0 && ++eax->ctr[i] == 0; i--);
 		serpent_encrypt(eax->key, eax->ctrenc, eax->ctr);
 	}
-	
+
 	/* we have len < 16: encrypt left-over and set ctrused accordingly */
 	for (i = 0; i < len; i++)
 		*dst++ = *src++ ^ eax->ctrenc[i];
@@ -90,7 +90,7 @@ eax_serpent_init(eax_serpent_t *eax, const uint8_t *key, size_t keylen)
 
 	/* prepare omac key */
 	omac_serpent_setkey(&eax->omac_key, eax->key);
-	
+
 	return 0;
 }
 
@@ -107,13 +107,13 @@ void
 eax_serpent_nonce(eax_serpent_t *eax, const uint8_t *nonce, size_t nolen)
 {
 	omac_serpent_t omac_nonce;
-	
+
 	/* calculate N tag from nonce */
 	omac_serpent_init(&omac_nonce, 0);
 	omac_serpent_update(&omac_nonce, &eax->omac_key, nonce, nolen);
 	omac_serpent_finalize(&omac_nonce, &eax->omac_key, eax->N);
 	burn(&omac_nonce, sizeof(omac_serpent_t));
-	
+
 	/* initialize counter as copy from N */
 	memcpy(eax->ctr, eax->N, 16);
 	serpent_encrypt(eax->key, eax->ctrenc, eax->ctr);

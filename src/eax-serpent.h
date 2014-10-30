@@ -18,10 +18,10 @@ typedef struct {
 	uint8_t			N[16];		/* omac-tag of nonce */
 
 	omac_serpent_key_t	omac_key;	/* key for all omac calculations */
-	
+
 	omac_serpent_t		omacH;		/* omac struct for header */
 	omac_serpent_t		omacC;		/* omac struct for cipher text */
-	
+
 } eax_serpent_t;
 
 

@@ -8,7 +8,7 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version. 
+ * (at your option) any later version.
  */
 
 
@@ -50,7 +50,7 @@ static void
 printhex(const char *label, const uint8_t *vec, size_t n)
 {
 	int i;
-	
+
         fprintf(stderr, "%s: ", label);
         if (n)
                 for (i = 0; i < n; i++)
@@ -188,9 +188,9 @@ init_cipher(eax_serpent_t *C, struct keyparam *kp, int enc)
 	memcpy(N, kp->nonce, DEF_NONCELEN);
 
 	/* derive encryption key and setup eax-serpent cipher */
-	pbkdf2_hmac_sha512(key, sizeof(key), kp->passwd, PASSLEN, 
+	pbkdf2_hmac_sha512(key, sizeof(key), kp->passwd, PASSLEN,
 			N, DEF_NONCELEN, kp->iter);
-	
+
 	eax_serpent_init(C, key, sizeof(key));
 
 
@@ -245,7 +245,7 @@ encrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 	eax_serpent_tag(C, tag);
 	if (verbose > 0)
 		printhex("tag", tag, 16);
-	
+
 	if (fwrite(tag, sizeof(uint8_t), 16, out) != 16) {
 		warn("can't write tag to output");
 		return -1;
@@ -266,14 +266,14 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 	 * to look out for the final tag. we do that by maintaining a
 	 * tag-buffer behind our normal read buffer.
 	 */
-	
+
 	n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE+16, in);
 	if (n < 16) {
 		if (ferror(in))
 			warn("can't read from input file");
 		else
 			warnx("input file is too short");
-		
+
 		return -1;
 	}
 
@@ -338,7 +338,7 @@ usage()
 }
 
 
-int 
+int
 main(int argc, char *argv[])
 {
 	char mode = 0;
@@ -364,7 +364,7 @@ main(int argc, char *argv[])
 	keyparam.iter = DEF_ITERATION;
 
 
-	/* 
+	/*
 	 * parse arguments
 	 */
 
@@ -380,7 +380,7 @@ main(int argc, char *argv[])
 		case 'f':
 			force = 1;
 			break;
-			
+
 		case 'i':
 			keyparam.iter = atoll(optarg);
 			break;
@@ -421,7 +421,7 @@ main(int argc, char *argv[])
 	 */
 
 	/* open file */
-	if (strcmp(inputfn, "-") == 0) 
+	if (strcmp(inputfn, "-") == 0)
 		in = stdin;
 	else {
 		in = fopen(inputfn, "r");
@@ -440,6 +440,7 @@ main(int argc, char *argv[])
 	}
 
 
+	/* if show-mode is selected, do it here and exit afterwards */
 	if (mode == 's') {
 		uint8_t tag[16];
 
@@ -460,18 +461,23 @@ main(int argc, char *argv[])
 	}
 
 
-	/* 
+	/*
 	 * check if output file already exists.. but do not open yet
 	 */
 	if (strcmp(outputfn, "-") != 0 && !force && exists(outputfn))
 		errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
 
 
-	/* read passwords */
+	/* read password
+	 *
+	 * read_pass_tty returns the length of the password, but we ignore that
+	 * and use the feature that the password will be padded to fit in the
+	 * hole buffer. that way we could use the hole buffer as a fixed size
+	 * password.
+	 */
 
-	rc = read_pass_tty(keyparam.passwd, sizeof(keyparam.passwd), "Password", 
+	rc = read_pass_tty(keyparam.passwd, sizeof(keyparam.passwd), "Password",
 			mode == 'e' ? "Confirm" : NULL);
-
 	if (rc == -1)
 		errx(1, "can't read password");
 
@@ -497,11 +503,11 @@ main(int argc, char *argv[])
 	}
 
 
-	/* 
+	/*
 	 * open output file
 	 *
 	 * here is a race condition in which we could overwrite a file.
-	 * we could use a tempfile instead and move it in place 
+	 * we could use a tempfile instead and move it in place
 	 * non-destructively.
 	 */
 	if (strcmp(outputfn, "-") == 0)

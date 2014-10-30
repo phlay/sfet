@@ -123,7 +123,7 @@
 	x4 ^= x1;
 
 
-int 
+int
 serpent_setkey(uint32_t *expkey, const uint8_t *key, unsigned int keylen)
 {
 	uint32_t	*k = expkey;
@@ -268,12 +268,12 @@ serpent_setkey(uint32_t *expkey, const uint8_t *key, unsigned int keylen)
 	return 0;
 }
 
-void 
+void
 serpent_encrypt(const uint32_t *expkey, uint8_t *dst, const uint8_t *src)
 {
 	const uint32_t	*k = expkey;
 	const uint32_t	*s = (const uint32_t *)src;
-	
+
 	uint32_t	*d = (uint32_t *)dst;
 	uint32_t	 r0, r1, r2, r3, r4;
 
@@ -281,7 +281,7 @@ serpent_encrypt(const uint32_t *expkey, uint8_t *dst, const uint8_t *src)
 	r1 = le32toh(s[1]);
 	r2 = le32toh(s[2]);
 	r3 = le32toh(s[3]);
-	
+
 				 K(r0,r1,r2,r3,0);
 	S0(r0,r1,r2,r3,r4);	LK(r2,r1,r3,r0,r4,1);
 	S1(r2,r1,r3,r0,r4);	LK(r4,r3,r0,r2,r1,2);

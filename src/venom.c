@@ -434,11 +434,9 @@ main(int argc, char *argv[])
 		outputfn = argv[1];
 
 
-	/*
-	 * check input file
+	/* 
+	 * open input file 
 	 */
-
-	/* open file */
 	if (strcmp(inputfn, "-") == 0)
 		in = stdin;
 	else {
@@ -447,7 +445,7 @@ main(int argc, char *argv[])
 			err(1, "%s: can't open input file", inputfn);
 	}
 
-	/* read & check header */
+	/* read & check header, if we expect an encrypted input */
 	if (mode != 'e') {
 		if (read_header(in, &keyparam) == -1) {
 			/* error reading input file? */
@@ -481,12 +479,19 @@ main(int argc, char *argv[])
 	}
 
 
-	/*
-	 * check if output file already exists.. but do not open yet
+	/* 
+	 * open output file
 	 */
-	if (strcmp(outputfn, "-") != 0 && !force && exists(outputfn))
-		errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
+	if (strcmp(outputfn, "-") == 0)
+		out = stdout;
+	else {
+		if (!force && exists(outputfn))
+			errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
 
+		out = opentemp(tmpoutfn, outputfn, outmode);
+		if (out == NULL)
+			errx(1, "can't open temp file");
+	}
 
 	/* read password
 	 *
@@ -525,18 +530,6 @@ main(int argc, char *argv[])
 	}
 
 
-	/* 
-	 * open output file
-	 */
-	if (strcmp(outputfn, "-") == 0)
-		out = stdout;
-	else {
-		out = opentemp(tmpoutfn, outputfn, outmode);
-		if (out == NULL)
-			errx(1, "can't open temp file");
-	}
-
-
 	/*
 	 * finally encrypt/decrypt
 	 */
@@ -548,7 +541,6 @@ main(int argc, char *argv[])
 		rc = encrypt_stream(in, out, &cipher, verbose);
 		if (rc == -1)
 			exit(1);
-
 		break;
 	case 'd':
 		rc = decrypt_stream(in, out, &cipher, verbose);
@@ -569,6 +561,7 @@ main(int argc, char *argv[])
 			if (unlink(outputfn) == -1)
 				err(1, "%s: can't unlink destination", outputfn);
 
+		/* link anonymous temp-file into place */
 		rc = linkat(AT_FDCWD, tmpoutfn, AT_FDCWD, outputfn, AT_SYMLINK_FOLLOW);
 		if (rc == -1)
 			err(1, "%s: can't link output into place", tmpoutfn);

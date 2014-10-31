@@ -15,13 +15,14 @@
 #define _FILE_OFFSET_BITS	64
 
 
+#include <limits.h>
 #include <stdint.h>
 #include <endian.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <libgen.h>
+#include <fcntl.h>
 
 #include <errno.h>
 #include <err.h>
@@ -312,7 +313,7 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 		printhex("tag", tag, 16);
 
 	if (memcmp(tag, buffer, 16) != 0) {
-		warnx("file is corrupted!");
+		warnx("mac check failed: encrypted file is corrupted!");
 		if (verbose > 0)
 			printhex("file tag", buffer+n, 16);
 
@@ -327,17 +328,15 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 void
 usage()
 {
-	fprintf(stderr, "Usage: venom [-edsvf] [-i <iter>] [<input>] [<output>]\n\n");
-
-	fprintf(stderr, "main mode:\n");
-	fprintf(stderr, "  -e\tencrypt\n");
-	fprintf(stderr, "  -d\tdecrypt\n");
-	fprintf(stderr, "  -s\tshow file metadata\n\n");
-
+	fprintf(stderr, "Usage: venom [-edsvf] [-i <iter>] [-m <mode>] [<input>] [<output>]\n");
 	fprintf(stderr, "options:\n");
-	fprintf(stderr, "  -v\tverbose\n");
-	fprintf(stderr, "  -f\tforce\n");
-	fprintf(stderr, "  -i n\tset pbkdf2 iteration number to n\n");
+	fprintf(stderr, "  -e\t\tencrypt\n");
+	fprintf(stderr, "  -d\t\tdecrypt\n");
+	fprintf(stderr, "  -s\t\tshow file metadata\n");
+	fprintf(stderr, "  -v\t\tverbose\n");
+	fprintf(stderr, "  -f\t\tforce\n");
+	fprintf(stderr, "  -i n\t\tset pbkdf2 iteration number to n\n");
+	fprintf(stderr, "  -m <mode>\tset file mode bits of output\n");
 }
 
 
@@ -351,9 +350,10 @@ main(int argc, char *argv[])
 
 	char *inputfn = "-";
 	char *outputfn = "-";
-	char *tmpoutfn = NULL;
 
 	FILE *in, *out;
+	char tmpoutfn[PATH_MAX];
+	int outmode = -1;
 
 	struct keyparam keyparam;
 	eax_serpent_t cipher;
@@ -372,7 +372,7 @@ main(int argc, char *argv[])
 	 * parse arguments
 	 */
 
-	while ((rc = getopt(argc, argv, "hedsvfi:")) != -1) {
+	while ((rc = getopt(argc, argv, "hedsvfi:m:")) != -1) {
 		switch (rc) {
 		case 'h':
 			usage();
@@ -389,6 +389,13 @@ main(int argc, char *argv[])
 			keyparam.iter = atoll(optarg);
 			break;
 
+		case 'm':
+			outmode = strtol(optarg, NULL, 8);
+			if (outmode == LONG_MIN || outmode == LONG_MAX)
+				errx(1, "illegal mode: %s", optarg);
+			break;
+
+
 		case 'e':
 		case 'd':
 		case 's':
@@ -404,6 +411,13 @@ main(int argc, char *argv[])
 	/* check configuration parameters */
 	if (keyparam.iter < 1024)
 		errx(1, "illegal pkbdf2 iteration number: %lu", keyparam.iter);
+
+	if (outmode == -1) {
+		if (mode == 'e')
+			outmode = DEF_MODE_ENC;
+		else if (mode == 'd')
+			outmode = DEF_MODE_DEC;
+	}
 
 	if (mode == 0) {
 		usage();
@@ -517,24 +531,10 @@ main(int argc, char *argv[])
 	if (strcmp(outputfn, "-") == 0)
 		out = stdout;
 	else {
-		int outfd;
-		size_t namelen = strlen(outputfn);
-
-		/* generate tempfile name */
-		tmpoutfn = malloc(namelen+7+1);
-		if (tmpoutfn == NULL)
-			err(1, "malloc");
-
-		strcpy(tmpoutfn, outputfn);
-		strcpy(tmpoutfn+namelen, "-XXXXXX");
-
-		/* open tmp file */
-		outfd = mkstemp(tmpoutfn);
-		if (outfd == -1)
-			err(1, "mkstemp");
-
-		out = fdopen(outfd, "w");
-	} 
+		out = opentemp(tmpoutfn, outputfn, outmode);
+		if (out == NULL)
+			errx(1, "can't open temp file");
+	}
 
 
 	/*
@@ -547,46 +547,37 @@ main(int argc, char *argv[])
 			exit(1);
 		rc = encrypt_stream(in, out, &cipher, verbose);
 		if (rc == -1)
-			warnx("encryption failed");
+			exit(1);
 
 		break;
 	case 'd':
 		rc = decrypt_stream(in, out, &cipher, verbose);
 		if (rc == -1)
-			warnx("decryption failed");
+			exit(1);
 		break;
+	default:
+		errx(1, "oops, internal error");
 	}
 
-	/* close files */
-	fclose(in);
-	fclose(out);
 
 	/*
 	 * handle output file, if not stdout
 	 */
 	if (out != stdout) {
-		if (rc != -1) {
-			/* link output into place */
-			if (force) {
-				/* violently move tmp-file into place */
-				if (rename(tmpoutfn, outputfn) == -1)
-					err(1, "%s: can't move output-tempfile into place",
-							outputfn);
-			} else {
-				/* carefully move tmp-file: this will fail if outputfn exists */
-				if (link(tmpoutfn, outputfn) == -1)
-					err(1, "%s: can't move output-tempfile into place",
-							outputfn);
+		/* if using force, unlink outputfn */
+		if (force && exists(outputfn))
+			if (unlink(outputfn) == -1)
+				err(1, "%s: can't unlink destination", outputfn);
 
-				if (unlink(tmpoutfn) == -1)
-					err(1, "%s: can't unlink file", outputfn);
-			}
-		} else if (rc == -1) {
-			if (unlink(tmpoutfn) == -1)
-				err(1, "%s: can't unlink tmp-file", tmpoutfn);
-		}
+		rc = linkat(AT_FDCWD, tmpoutfn, AT_FDCWD, outputfn, AT_SYMLINK_FOLLOW);
+		if (rc == -1)
+			err(1, "%s: can't link output into place", tmpoutfn);
 	}
 
 
-	return rc == -1 ? 1 : 0;
+	/* close files */
+	fclose(in);
+	fclose(out);
+
+	return 0;
 }

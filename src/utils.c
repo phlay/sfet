@@ -9,14 +9,19 @@
  * (at your option) any later version.
  */
 
+#define _GNU_SOURCE
+
+#include <sys/types.h>
 #include <sys/stat.h>
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <libgen.h>
 
 #include <err.h>
 
@@ -54,6 +59,19 @@ exists(const char *path)
         struct stat sb;
 	return (stat(path, &sb) == -1) ? 0 : 1;
 }
+
+static int
+direxists(const char *dir)
+{
+        struct stat sb;
+
+	/* return 'no' if stat fails */
+        if (stat(dir, &sb) < 0)
+                return 0;
+
+        return S_ISDIR(sb.st_mode) ? 1 : 0;
+}
+
 
 
 void
@@ -126,4 +144,37 @@ secrand(void *buf, size_t len)
 	fprintf(stderr, "done\n");
 
 	return 0;
+}
+
+
+
+FILE *
+opentemp(char tmpfn[PATH_MAX], const char *target, int mode)
+{
+	char path[PATH_MAX];
+	char *dir;
+
+	FILE *rval;
+	int fd;
+	int rc;
+
+	rc = snprintf(path, PATH_MAX, "%s", target);
+	if (rc >= PATH_MAX)
+		return NULL;
+
+	dir = dirname(path);
+	if (!direxists(dir))
+		return NULL;
+
+	fd = open(dir, O_TMPFILE | O_WRONLY, mode);
+	if (fd == -1)
+		return NULL;
+
+	rc = snprintf(tmpfn, PATH_MAX, "/proc/self/fd/%d", fd);
+	if (rc >= PATH_MAX)
+		return NULL;
+
+	rval = fdopen(fd, "w");
+
+	return rval;
 }

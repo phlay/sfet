@@ -12,6 +12,9 @@
  */
 
 
+#define _FILE_OFFSET_BITS	64
+
+
 #include <stdint.h>
 #include <endian.h>
 #include <stdio.h>
@@ -348,6 +351,7 @@ main(int argc, char *argv[])
 
 	char *inputfn = "-";
 	char *outputfn = "-";
+	char *tmpoutfn = NULL;
 
 	FILE *in, *out;
 
@@ -440,7 +444,9 @@ main(int argc, char *argv[])
 	}
 
 
-	/* if show-mode is selected, do it here and exit afterwards */
+	/*
+	 * handle show-meta-data-mode (-s)
+	 */
 	if (mode == 's') {
 		uint8_t tag[16];
 
@@ -489,6 +495,8 @@ main(int argc, char *argv[])
 			errx(1, "can't read random");
 	}
 
+
+	/* display metadata if verbosity is at least 2 */
 	if (verbose > 1) {
 		fprintf(stderr, "iterations: %ld\n", keyparam.iter);
 		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
@@ -503,25 +511,40 @@ main(int argc, char *argv[])
 	}
 
 
-	/*
+	/* 
 	 * open output file
-	 *
-	 * here is a race condition in which we could overwrite a file.
-	 * we could use a tempfile instead and move it in place
-	 * non-destructively.
 	 */
 	if (strcmp(outputfn, "-") == 0)
 		out = stdout;
 	else {
-		out = fopen(outputfn, "w");
-		if (out == NULL)
-			err(1, "%s: can't open output file", outputfn);
-	}
+		int outfd;
+		size_t namelen = strlen(outputfn);
+
+		/* generate tempfile name */
+		tmpoutfn = malloc(namelen+7+1);
+		if (tmpoutfn == NULL)
+			err(1, "malloc");
+
+		strcpy(tmpoutfn, outputfn);
+		strcpy(tmpoutfn+namelen, "-XXXXXX");
+
+		/* open tmp file */
+		outfd = mkstemp(tmpoutfn);
+		if (outfd == -1)
+			err(1, "mkstemp");
+
+		out = fdopen(outfd, "w");
+	} 
 
 
+	/*
+	 * finally encrypt/decrypt
+	 */
 	switch (mode) {
 	case 'e':
-		write_header(out, &keyparam);
+		rc = write_header(out, &keyparam);
+		if (rc == -1)
+			exit(1);
 		rc = encrypt_stream(in, out, &cipher, verbose);
 		if (rc == -1)
 			warnx("encryption failed");
@@ -535,16 +558,35 @@ main(int argc, char *argv[])
 	}
 
 	/* close files */
-	if (strcmp(inputfn, "-") != 0)
-		fclose(in);
+	fclose(in);
+	fclose(out);
 
-	if (strcmp(outputfn, "-") != 0) {
-		fclose(out);
+	/*
+	 * handle output file, if not stdout
+	 */
+	if (out != stdout) {
+		if (rc != -1) {
+			/* link output into place */
+			if (force) {
+				/* violently move tmp-file into place */
+				if (rename(tmpoutfn, outputfn) == -1)
+					err(1, "%s: can't move output-tempfile into place",
+							outputfn);
+			} else {
+				/* carefully move tmp-file: this will fail if outputfn exists */
+				if (link(tmpoutfn, outputfn) == -1)
+					err(1, "%s: can't move output-tempfile into place",
+							outputfn);
 
-		/* if encryption/decryption failed, unlink outputfn */
-		if (rc == -1)
-			unlink(outputfn);
+				if (unlink(tmpoutfn) == -1)
+					err(1, "%s: can't unlink file", outputfn);
+			}
+		} else if (rc == -1) {
+			if (unlink(tmpoutfn) == -1)
+				err(1, "%s: can't unlink tmp-file", tmpoutfn);
+		}
 	}
+
 
 	return rc == -1 ? 1 : 0;
 }

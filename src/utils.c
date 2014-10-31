@@ -74,11 +74,6 @@ direxists(const char *dir)
 
 
 
-void
-burn(void *buf, size_t len)
-{
-	memset(buf, 0, len);
-}
 
 #ifndef HAVE_GETRANDOM
 

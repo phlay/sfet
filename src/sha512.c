@@ -140,14 +140,15 @@ sha512_init(sha512ctx *ctx)
 }
 
 void
-sha512_add(sha512ctx *ctx, const uint8_t *data, size_t len)
+sha512_update(sha512ctx *ctx, const void *data, size_t len)
 {
+	const uint8_t *ptr = (const uint8_t *)data;
 	int i;
 
 	if (ctx->fill > 0) {
 		/* fill internal buffer up and compress */
 		while (ctx->fill < 128 && len > 0) {
-			ctx->buffer[ctx->fill++] = *data++;
+			ctx->buffer[ctx->fill++] = *ptr++;
 			len--;
 		}
 		if (ctx->fill < 128)
@@ -160,16 +161,16 @@ sha512_add(sha512ctx *ctx, const uint8_t *data, size_t len)
 	/* ctx->fill is now zero */
 
 	while (len >= 128) {
-		compress(ctx->state, data);
+		compress(ctx->state, ptr);
 		ctx->count++;
 
-		data += 128;
+		ptr += 128;
 		len -= 128;
 	}
 
 	/* save rest for next time */
 	for (i = 0; i < len; i++)
-		ctx->buffer[i] = data[i];
+		ctx->buffer[i] = ptr[i];
 
 	ctx->fill = len;
 }

@@ -15,8 +15,9 @@
 #define _FILE_OFFSET_BITS	64
 
 
-#include <limits.h>
+#include <inttypes.h>
 #include <stdint.h>
+#include <limits.h>
 #include <endian.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -410,7 +411,7 @@ main(int argc, char *argv[])
 
 	/* check configuration parameters */
 	if (keyparam.iter < 1024)
-		errx(1, "illegal pkbdf2 iteration number: %lu", keyparam.iter);
+		errx(1, "illegal pkbdf2 iteration number: %" PRIu64, keyparam.iter);
 
 	if (outmode == -1) {
 		if (mode == 'e')
@@ -463,7 +464,7 @@ main(int argc, char *argv[])
 		uint8_t tag[16];
 
 		/* show key param values */
-		fprintf(stderr, "iterations: %ld\n", keyparam.iter);
+		fprintf(stderr, "iterations: %" PRIu64 "\n", keyparam.iter);
 		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
 		printhex("pwcheck", keyparam.pwcheck, sizeof(keyparam.pwcheck));
 
@@ -517,17 +518,13 @@ main(int argc, char *argv[])
 
 	/* display metadata if verbosity is at least 2 */
 	if (verbose > 1) {
-		fprintf(stderr, "iterations: %ld\n", keyparam.iter);
+		fprintf(stderr, "iterations: %" PRIu64 "\n", keyparam.iter);
 		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
 	}
 
-
 	/* init encryption */
-	if (init_cipher(&cipher, &keyparam, mode == 'e' ? 1 : 0) == -1) {
-		warnx("wrong password");
-		fclose(in);
-		return 1;
-	}
+	if (init_cipher(&cipher, &keyparam, mode == 'e' ? 1 : 0) == -1)
+		errx(1, "wrong password");
 
 
 	/*

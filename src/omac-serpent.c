@@ -80,14 +80,15 @@ omac_serpent_init(omac_serpent_t *ctx, uint8_t t)
  */
 void
 omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
-		    const uint8_t *data, size_t len)
+		    const void *data, size_t len)
 {
+	const uint8_t *ptr = (const uint8_t *)data;
 	int i;
 
 	/* start with carryover */
 	if (omac->fill > 0) {
 		while (omac->fill < 16 && len > 0) {
-			omac->buf[omac->fill++] = *data++;
+			omac->buf[omac->fill++] = *ptr++;
 			len--;
 		}
 
@@ -105,12 +106,12 @@ omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
 	for (; len >= 16; len -= 16) {
 		serpent_encrypt(key->expkey, omac->tag, omac->tag);
 		for (i = 0; i < 16; i++)
-			omac->tag[i] ^= *data++;
+			omac->tag[i] ^= *ptr++;
 	}
 
 	/* copy left-over in our buffer */
 	for (i = 0; i < len; i++)
-		omac->buf[i] = *data++;
+		omac->buf[i] = *ptr++;
 
 	omac->fill = len;
 }

@@ -31,7 +31,7 @@ void	 omac_serpent_setkey(omac_serpent_key_t *omac_key, const uint32_t *key);
 void	 omac_serpent_init(omac_serpent_t *ctx, uint8_t t);
 void	 omac_serpent_update(omac_serpent_t *omac,
 			     const omac_serpent_key_t *key,
-			     const uint8_t *data, size_t len);
+			     const void *data, size_t len);
 void	 omac_serpent_finalize(omac_serpent_t *omac,
 			       const omac_serpent_key_t *key, uint8_t tag[16]);
 

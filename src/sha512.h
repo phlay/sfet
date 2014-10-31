@@ -19,7 +19,7 @@ typedef struct {
 
 
 void sha512_init(sha512ctx *ctx);
-void sha512_add(sha512ctx *ctx, const uint8_t *data, size_t len);
+void sha512_update(sha512ctx *ctx, const void *data, size_t len);
 void sha512_done(sha512ctx *ctx, uint8_t out[SHA512_HASH_LENGTH]);
 
 

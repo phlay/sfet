@@ -28,7 +28,7 @@ int main()
 
 	for (i = 0; i < table_num; i++) {
 		sha512_init(&hctx);
-		sha512_add(&hctx, table[i].buffer, table[i].len);
+		sha512_update(&hctx, table[i].buffer, table[i].len);
 		sha512_done(&hctx, checkhash);
 
 		if (memcmp(checkhash, table[i].hash, 32) != 0) {

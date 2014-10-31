@@ -112,7 +112,6 @@ eax_serpent_nonce(eax_serpent_t *eax, const uint8_t *nonce, size_t nolen)
 	omac_serpent_init(&omac_nonce, 0);
 	omac_serpent_update(&omac_nonce, &eax->omac_key, nonce, nolen);
 	omac_serpent_finalize(&omac_nonce, &eax->omac_key, eax->N);
-	burn(&omac_nonce, sizeof(omac_serpent_t));
 
 	/* initialize counter as copy from N */
 	memcpy(eax->ctr, eax->N, 16);
@@ -179,8 +178,4 @@ eax_serpent_tag(eax_serpent_t *eax, uint8_t tag[16])
 	/* compute resulting tag */
 	for (i = 0; i < 16; i++)
 		tag[i] = eax->N[i] ^ H[i] ^ C[i];
-
-	/* cleanup stack */
-	burn(H, sizeof(H));
-	burn(C, sizeof(C));
 }

@@ -42,7 +42,7 @@ hmac_sha512_init(sha512ctx *ctx, const uint8_t key[BS])
 		pad[i] = key[i] ^ IPAD;
 
 	sha512_init(ctx);
-	sha512_add(ctx, pad, BS);
+	sha512_update(ctx, pad, BS);
 }
 
 
@@ -61,8 +61,8 @@ hmac_sha512_done(sha512ctx *ctx, const uint8_t key[BS], uint8_t result[HLEN])
 	sha512_done(ctx, ihash);
 
 	sha512_init(ctx);
-	sha512_add(ctx, pad, BS);
-	sha512_add(ctx, ihash, HLEN);
+	sha512_update(ctx, pad, BS);
+	sha512_update(ctx, ihash, HLEN);
 	sha512_done(ctx, result);
 }
 
@@ -90,25 +90,25 @@ pbkdf2_hmac_sha512(uint8_t *out, size_t outlen,
 		memset(key + passlen, 0, BS-passlen);
 	} else {
 		sha512_init(&hmac);
-		sha512_add(&hmac, passwd, passlen);
+		sha512_update(&hmac, passwd, passlen);
 		sha512_done(&hmac, key);
 		memset(key + HLEN, 0, BS-HLEN);
 	}
 
 	hmac_sha512_init(&hmac_template, key);
-	sha512_add(&hmac_template, salt, saltlen);
+	sha512_update(&hmac_template, salt, saltlen);
 
 	for (i = 1; outlen > 0; i++) {
 		memcpy(&hmac, &hmac_template, sizeof(sha512ctx));
 
 		be32i = htobe32(i);
-		sha512_add(&hmac, (uint8_t*)&be32i, sizeof(be32i));
+		sha512_update(&hmac, &be32i, sizeof(be32i));
 		hmac_sha512_done(&hmac, key, U);
 		memcpy(F, U, HLEN);
 
 		for (j = 2; j <= iter; j++) {
 			hmac_sha512_init(&hmac, key);
-			sha512_add(&hmac, U, HLEN);
+			sha512_update(&hmac, U, HLEN);
 			hmac_sha512_done(&hmac, key, U);
 
 			for (k = 0; k < HLEN; k++)

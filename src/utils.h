@@ -14,8 +14,6 @@ void	*x_malloc(size_t size);
 char	*x_strdup(const char *s);
 int	 exists(const char *path);
 
-
-void	 burn(void *, size_t);
 int	 secrand(void *, size_t);
 FILE	*opentemp(char tmpfn[PATH_MAX], const char *target, int mode);
 

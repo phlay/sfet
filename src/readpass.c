@@ -138,8 +138,6 @@ read_pass_tty(uint8_t *passwd, size_t max, const char *promptA, const char *prom
 	if (input != stdin)
 		fclose(input);
 
-	burn(confirm, max);
-
 	return passlen;
 
 error2:

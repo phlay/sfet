@@ -24,7 +24,7 @@ typedef struct {
 	uint8_t		tag[16];
 	uint8_t		buf[16];
 	int		fill;
-} omac_serpent_t; 
+} omac_serpent_t;
 
 
 void	 omac_serpent_setkey(omac_serpent_key_t *omac_key, const uint32_t *key);

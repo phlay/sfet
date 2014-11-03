@@ -56,7 +56,7 @@ omac_serpent_setkey(omac_serpent_key_t *omac_key, const uint32_t *expkey)
 	 * (see xtimes above).
 	 */
 	memset(omac_key->B, 0, 16);
-	serpent_encrypt(expkey, omac_key->B, omac_key->B);
+	serpent_encrypt(omac_key->B, omac_key->B, expkey);
 	xtimes(omac_key->B, omac_key->B);
 	xtimes(omac_key->P, omac_key->B);
 }
@@ -97,14 +97,14 @@ omac_serpent_update(omac_serpent_t *omac, const omac_serpent_key_t *key,
 			return;
 
 		/* buffer is full => do one OMAC round */
-		serpent_encrypt(key->expkey, omac->tag, omac->tag);
+		serpent_encrypt(omac->tag, omac->tag, key->expkey);
 		for (i = 0; i < 16; i++)
 			omac->tag[i] ^= omac->buf[i];
 	}
 
 	/* now loop over data */
 	for (; len >= 16; len -= 16) {
-		serpent_encrypt(key->expkey, omac->tag, omac->tag);
+		serpent_encrypt(omac->tag, omac->tag, key->expkey);
 		for (i = 0; i < 16; i++)
 			omac->tag[i] ^= *ptr++;
 	}
@@ -137,7 +137,7 @@ omac_serpent_finalize(omac_serpent_t *omac,
 
 	if (omac->fill) {
 		/* last block is incomplete => copy what we have */
-		serpent_encrypt(key->expkey, omac->tag, omac->tag);
+		serpent_encrypt(omac->tag, omac->tag, key->expkey);
 		for (i = 0; i < omac->fill; i++)
 			omac->tag[i] ^= omac->buf[i];
 
@@ -153,5 +153,5 @@ omac_serpent_finalize(omac_serpent_t *omac,
 			omac->tag[i] ^= key->B[i];
 	}
 
-	serpent_encrypt(key->expkey, tag, omac->tag);
+	serpent_encrypt(tag, omac->tag, key->expkey);
 }

@@ -215,10 +215,8 @@ init_cipher(eax_serpent_t *C, struct keyparam *kp, int enc)
 
 	if (enc)
 		memcpy(kp->pwcheck, tag, 4);
-	else {
-		if (memcmp(tag, kp->pwcheck, 4) != 0)
-			return -1;
-	}
+	else if (memcmp(tag, kp->pwcheck, 4) != 0)
+		return -1;
 
 	return 0;
 }

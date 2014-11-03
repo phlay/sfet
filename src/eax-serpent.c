@@ -44,7 +44,7 @@ serpent_ctr(eax_serpent_t *eax, uint8_t *dst, const uint8_t *src, size_t len)
 
 		/* advance and encrypt counter */
 		for (i = 15; i >= 0 && ++eax->ctr[i] == 0; i--);
-		serpent_encrypt(eax->key, eax->ctrenc, eax->ctr);
+		serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
 	}
 
 	/*
@@ -53,12 +53,16 @@ serpent_ctr(eax_serpent_t *eax, uint8_t *dst, const uint8_t *src, size_t len)
 	 */
 
 	/* mainloop: encrypt src to dst in 16 byte chunks  */
+#ifdef HAVE_ASM
+	for (; len >= 4*16; len -= 4*16)
+		serpent4x_ctr(dst, src, eax->key, eax->ctr, eax->ctrenc);
+#endif
 	for (; len >= 16; len -= 16) {
 		for (i = 0; i < 16; i++)
 			*dst++ = *src++ ^ eax->ctrenc[i];
 
 		for (i = 15; i >= 0 && ++eax->ctr[i] == 0; i--);
-		serpent_encrypt(eax->key, eax->ctrenc, eax->ctr);
+		serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
 	}
 
 	/* we have len < 16: encrypt left-over and set ctrused accordingly */
@@ -115,7 +119,7 @@ eax_serpent_nonce(eax_serpent_t *eax, const uint8_t *nonce, size_t nolen)
 
 	/* initialize counter as copy from N */
 	memcpy(eax->ctr, eax->N, 16);
-	serpent_encrypt(eax->key, eax->ctrenc, eax->ctr);
+	serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
 	eax->ctrused = 0;
 
 	/* initialize other omacs, H for header and C for ciphertext */

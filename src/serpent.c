@@ -268,8 +268,9 @@ serpent_setkey(uint32_t *expkey, const uint8_t *key, unsigned int keylen)
 	return 0;
 }
 
+#ifndef HAVE_ASM
 void
-serpent_encrypt(const uint32_t *expkey, uint8_t *dst, const uint8_t *src)
+serpent_encrypt(uint8_t *dst, const uint8_t *src, const uint32_t *expkey)
 {
 	const uint32_t	*k = expkey;
 	const uint32_t	*s = (const uint32_t *)src;
@@ -321,3 +322,4 @@ serpent_encrypt(const uint32_t *expkey, uint8_t *dst, const uint8_t *src)
 	d[2] = htole32(r2);
 	d[3] = htole32(r3);
 }
+#endif

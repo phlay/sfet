@@ -23,10 +23,17 @@ ifeq "$(USE_ASM_AVX)" "yes"
 	CFLAGS += -DUSE_ASM_AVX
 endif
 
+ifeq "$(HAVE_GETRANDOM)" "yes"
+	CFLAGS += -DHAVE_GETRANDOM
+endif
 
-.PHONY: clean
+
+.PHONY: clean all install
 .SUFFIXES: .asm
 
+all: venom
+
+${OBJ}: defaults.h config.mk
 
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<
@@ -34,14 +41,12 @@ endif
 	$(AS) $(ASFLAGS) $<
 
 
-all:	venom
+venom: $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ)
 
 clean:
 	rm -f *~ *.o venom
 
-install: venom
-	ln -f venom ~/bin
-
-venom: $(OBJ)
-	$(CC) $(LDFLAGS) -o $@ $(OBJ)
-
+install: all
+	@mkdir -p ${DESTDIR}${PREFIX}/bin
+	@install -m 0757 venom ${DESTDIR}${PREFIX}/bin

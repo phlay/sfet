@@ -5,3 +5,7 @@ USE_ASM=no
 # enable x86_64 avx assembly to speed up serpent counter mode
 #
 USE_ASM_AVX=no
+
+# if you have a linux system with getrandom() system call set this to yes
+#
+HAVE_GETRANDOM=no

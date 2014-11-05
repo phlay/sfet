@@ -49,4 +49,4 @@ clean:
 
 install: all
 	@mkdir -p ${DESTDIR}${PREFIX}/bin
-	@install -m 0757 venom ${DESTDIR}${PREFIX}/bin
+	install -m 0755 venom ${DESTDIR}${PREFIX}/bin

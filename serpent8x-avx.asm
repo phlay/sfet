@@ -282,16 +282,16 @@
 	ltrans	RA, RB, RC, RD
 
 	; add round key
-	vbroadcastss	TA, [RDX + 4*(4*(%1) + 0)]
+	vbroadcastss	TA, [RDX + 4*(4*%1 + 0)]
 	vpxor	RE, RA, TA
 	vpxor	RA, RI, TA
-	vbroadcastss	TA, [RDX + 4*(4*(%1) + 1)]
+	vbroadcastss	TA, [RDX + 4*(4*%1 + 1)]
 	vpxor	RF, RB, TA
 	vpxor	RB, RJ, TA
-	vbroadcastss	TA, [RDX + 4*(4*(%1) + 2)]
+	vbroadcastss	TA, [RDX + 4*(4*%1 + 2)]
 	vpxor	RG, RC, TA
 	vpxor	RC, RK, TA
-	vbroadcastss	TA, [RDX + 4*(4*(%1) + 3)]
+	vbroadcastss	TA, [RDX + 4*(4*%1 + 3)]
 	vpxor	RH, RD, TA
 	vpxor	RD, RL, TA
 %endmacro
@@ -358,16 +358,16 @@ serpent8x:
 	S7		RA, RB, RC, RD, RE, RF, RG, RH
 
 	; add final round key
-	vbroadcastss	TA, [RDX + 4*(4*(32) + 0)]
+	vbroadcastss	TA, [RDX + 4*(4*32 + 0)]
 	vpxor		RE, RA, TA
 	vpxor		RA, RI, TA
-	vbroadcastss	TA, [RDX + 4*(4*(32) + 1)]
+	vbroadcastss	TA, [RDX + 4*(4*32 + 1)]
 	vpxor		RF, RB, TA
 	vpxor		RB, RJ, TA
-	vbroadcastss	TA, [RDX + 4*(4*(32) + 2)]
+	vbroadcastss	TA, [RDX + 4*(4*32 + 2)]
 	vpxor		RG, RC, TA
 	vpxor		RC, RK, TA
-	vbroadcastss	TA, [RDX + 4*(4*(32) + 3)]
+	vbroadcastss	TA, [RDX + 4*(4*32 + 3)]
 	vpxor		RH, RD, TA
 	vpxor		RD, RL, TA
 

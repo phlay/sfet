@@ -37,9 +37,11 @@
 %define TC	xmm14
 %define TD	xmm15
 
+%define RKEY	RDX
 
 
-%macro load8 9
+
+%macro load8	9
 	vmovdqu		%1, [%9 + 16*0]
 	vmovdqu		%2, [%9 + 16*1]
 	vmovdqu		%3, [%9 + 16*2]
@@ -50,7 +52,7 @@
 	vmovdqu		%8, [%9 + 16*7]
 %endmacro
 
-%macro store8 9
+%macro store8	9
 	vmovdqu		[%9 + 16*0], %1
 	vmovdqu		[%9 + 16*1], %2
 	vmovdqu		[%9 + 16*2], %3
@@ -63,9 +65,9 @@
 
 
 %macro rol128	3
-	vpslld	TA, %2, %3
-	vpsrld	%1, %2, 32 - %3
-	vpor	%1, %1, TA
+	vpslld		TA, %2, %3
+	vpsrld		%1, %2, 32 - %3
+	vpor		%1, %1, TA
 %endmacro
 
 %macro transpose	4
@@ -270,31 +272,35 @@
 
 
 
-;; round <round> <sbox>
+;; round <round>
 ;;
-%macro round	2
+%macro serpent_round	1
+	; s-box for this round
+	%assign	j	((%1-1) % 8)
+
 	; apply s-box to first block-set
-	S%2	RI, RJ, RK, RL, RA, RB, RC, RD
+	S%[j]	RI, RJ, RK, RL, RA, RB, RC, RD
 	ltrans	RI, RJ, RK, RL
 
 	; apply s-box to second block-set
-	S%2	RA, RB, RC, RD, RE, RF, RG, RH
+	S%[j]	RA, RB, RC, RD, RE, RF, RG, RH
 	ltrans	RA, RB, RC, RD
 
-	; add round key
-	vbroadcastss	TA, [RDX + 4*(4*%1 + 0)]
+	; add round key and get block-sets in place again
+	vbroadcastss	TA, [RKEY + 4*(4*%1 + 0)]
 	vpxor	RE, RA, TA
 	vpxor	RA, RI, TA
-	vbroadcastss	TA, [RDX + 4*(4*%1 + 1)]
+	vbroadcastss	TA, [RKEY + 4*(4*%1 + 1)]
 	vpxor	RF, RB, TA
 	vpxor	RB, RJ, TA
-	vbroadcastss	TA, [RDX + 4*(4*%1 + 2)]
+	vbroadcastss	TA, [RKEY + 4*(4*%1 + 2)]
 	vpxor	RG, RC, TA
 	vpxor	RC, RK, TA
-	vbroadcastss	TA, [RDX + 4*(4*%1 + 3)]
+	vbroadcastss	TA, [RKEY + 4*(4*%1 + 3)]
 	vpxor	RH, RD, TA
 	vpxor	RD, RL, TA
 %endmacro
+
 
 
 %macro ctr_inc	2
@@ -330,27 +336,25 @@ serpent8x:
 	transpose	RE, RF, RG, RH
 
 	; apply initial key
-	vbroadcastss	TA, [RDX]
+	vbroadcastss	TA, [RKEY]
 	vpxor		RA, RA, TA
 	vpxor		RE, RE, TA
-	vbroadcastss	TA, [RDX + 4*1]
+	vbroadcastss	TA, [RKEY + 4*1]
 	vpxor		RB, RB, TA
 	vpxor		RF, RF, TA
-	vbroadcastss	TA, [RDX + 4*2]
+	vbroadcastss	TA, [RKEY + 4*2]
 	vpxor		RC, RC, TA
 	vpxor		RG, RG, TA
-	vbroadcastss	TA, [RDX + 4*3]
+	vbroadcastss	TA, [RKEY + 4*3]
 	vpxor		RD, RD, TA
 	vpxor		RH, RH, TA
 
 	; do 31 rounds
 %assign i 1
-%assign j 0
 %rep 31
-	round		i, j
+	serpent_round	i
 
-	%assign		i i+1
-	%assign		j ((j+1) % 8)
+%assign	i (i+1)
 %endrep
 
 	; last round without linear transformation
@@ -358,16 +362,16 @@ serpent8x:
 	S7		RA, RB, RC, RD, RE, RF, RG, RH
 
 	; add final round key
-	vbroadcastss	TA, [RDX + 4*(4*32 + 0)]
+	vbroadcastss	TA, [RKEY + 4*(4*32 + 0)]
 	vpxor		RE, RA, TA
 	vpxor		RA, RI, TA
-	vbroadcastss	TA, [RDX + 4*(4*32 + 1)]
+	vbroadcastss	TA, [RKEY + 4*(4*32 + 1)]
 	vpxor		RF, RB, TA
 	vpxor		RB, RJ, TA
-	vbroadcastss	TA, [RDX + 4*(4*32 + 2)]
+	vbroadcastss	TA, [RKEY + 4*(4*32 + 2)]
 	vpxor		RG, RC, TA
 	vpxor		RC, RK, TA
-	vbroadcastss	TA, [RDX + 4*(4*32 + 3)]
+	vbroadcastss	TA, [RKEY + 4*(4*32 + 3)]
 	vpxor		RH, RD, TA
 	vpxor		RD, RL, TA
 

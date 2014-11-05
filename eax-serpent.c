@@ -44,7 +44,6 @@ serpent_ctr(eax_serpent_t *eax, uint8_t *dst, const uint8_t *src, size_t len)
 
 		/* advance and encrypt counter */
 		for (i = 15; i >= 0 && ++eax->ctr[i] == 0; i--);
-		serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
 	}
 
 	/*
@@ -52,22 +51,27 @@ serpent_ctr(eax_serpent_t *eax, uint8_t *dst, const uint8_t *src, size_t len)
 	 * at this point, but this will be fixed after the mainloop
 	 */
 
-	/* mainloop: encrypt src to dst in 16 byte chunks  */
-#ifdef HAVE_ASM
-	for (; len >= 4*16; len -= 4*16)
-		serpent4x_ctr(dst, src, eax->key, eax->ctr, eax->ctrenc);
+	/*
+	 * mainloop: encrypt src to dst in 16 byte chunks
+	 */
+#ifdef USE_ASM_AVX
+	for (; len >= 8*16; len -= 8*16, dst += 8*16, src += 8*16)
+		serpent8x_ctr(dst, src, eax->key, eax->ctr);
 #endif
 	for (; len >= 16; len -= 16) {
+		serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
 		for (i = 0; i < 16; i++)
 			*dst++ = *src++ ^ eax->ctrenc[i];
 
 		for (i = 15; i >= 0 && ++eax->ctr[i] == 0; i--);
-		serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
 	}
 
-	/* we have len < 16: encrypt left-over and set ctrused accordingly */
-	for (i = 0; i < len; i++)
-		*dst++ = *src++ ^ eax->ctrenc[i];
+	if (len > 0) {
+		/* we have len < 16: encrypt left-over and set ctrused accordingly */
+		serpent_encrypt(eax->ctrenc, eax->ctr, eax->key);
+		for (i = 0; i < len; i++)
+			*dst++ = *src++ ^ eax->ctrenc[i];
+	}
 
 	eax->ctrused = len;
 }

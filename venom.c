@@ -352,7 +352,7 @@ main(int argc, char *argv[])
 
 	FILE *in, *out;
 	char tmpoutfn[PATH_MAX];
-	int outmode = -1;
+	long outmode = -1;
 
 	struct keyparam keyparam;
 	eax_serpent_t cipher;

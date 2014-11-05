@@ -16,5 +16,8 @@
 int	serpent_setkey(uint32_t *expkey, const uint8_t *key, unsigned int keylen);
 void	serpent_encrypt(uint8_t *dst, const uint8_t *src, const uint32_t *expkey);
 
+#ifdef USE_ASM_AVX
+void	serpent8x_ctr(uint8_t *dst, const uint8_t *src, const uint32_t *expkey, uint8_t *ctr);
+#endif
 
 #endif

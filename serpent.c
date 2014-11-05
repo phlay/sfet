@@ -268,7 +268,7 @@ serpent_setkey(uint32_t *expkey, const uint8_t *key, unsigned int keylen)
 	return 0;
 }
 
-#ifndef USE_ASM_X86
+#ifndef USE_ASM
 void
 serpent_encrypt(uint8_t *dst, const uint8_t *src, const uint32_t *expkey)
 {

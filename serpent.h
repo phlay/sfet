@@ -20,4 +20,8 @@ void	serpent_encrypt(uint8_t *dst, const uint8_t *src, const uint32_t *expkey);
 void	serpent8x_ctr(uint8_t *dst, const uint8_t *src, const uint32_t *expkey, uint8_t *ctr);
 #endif
 
+#ifdef SELFTEST
+void	serpent8x_encrypt(uint8_t *dst, const uint8_t *src, const uint32_t *expkey);
+#endif
+
 #endif

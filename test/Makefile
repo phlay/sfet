@@ -1,28 +1,102 @@
-CC = cc 
-CFLAGS = -std=gnu99 -Wall -pedantic -O2 -I..
-LDFLAGS = 
+CC = cc
+CFLAGS = -std=gnu99 -Wall -pedantic -O2 -I.. -DSELFTEST
+LDFLAGS =
 
-OBJ_TEST_SHA512 = test-sha512.o ../sha512.o
-OBJ_TEST_PBKDF2 = test-pbkdf2.o printvec.o ../sha512.o ../pbkdf2-hmac-sha512.o
+AS = nasm
+ASFLAGS = -f elf64 -dSELFTEST
 
+include ../config.mk
+
+OBJ_TEST_SHA512 = test-sha512.o sha512.o
+OBJ_TEST_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
+OBJ_TEST_SERPENT = test-serpent.o serpent.o
+OBJ_TEST_SERPENT_X86_64 = test-serpent.o serpent-noenc.o serpent-x86-64.o
+OBJ_TEST_SERPENT_AVX = test-serpent8x.o serpent-noenc.o serpent8x-avx.o
+
+
+
+TESTS = sha512 pbkdf2 serpent
+
+ifeq "$(USE_ASM)" "yes"
+	TESTS += serpent-x86-64
+endif
+
+ifeq "$(USE_ASM_AVX)" "yes"
+	TESTS += serpent-avx
+endif
+
+
+#.SILENT:
+.SUFFIXES: .asm
+.PHONY: all clean test $(TESTS)
+
+all: test
+
+clean:
+	rm -f *~ *.o
+	for test in $(TESTS); do rm -f test-$$test; done
+
+test: $(TESTS)
+
+sha512: test-sha512
+	@echo "Testing sha512..."
+	@./test-sha512
+
+pbkdf2: test-pbkdf2
+	@echo "Testing pbkdf2..."
+	@./test-pbkdf2
+
+serpent: test-serpent
+	@echo "Testing serpent..."
+	@./test-serpent
+
+serpent-x86-64: test-serpent-x86-64
+	@echo "Testing serpent-x86-64..."
+	@./test-serpent-x86-64
+
+serpent-avx: test-serpent-avx
+	@echo "Testing serpent-avx..."
+	@./test-serpent-avx
+
+
+# general object rules
+#
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<
 
-all:	test
+%.o: ../%.c
+	$(CC) -c $(CFLAGS) -o $@ $<
 
-clean:
-	rm -f *~ *.o test-sha512 test-pbkdf2
+%.o: ../%.asm
+	$(AS) $(ASFLAGS) $< -o $@
 
+# special case object rules
+#
+serpent-noenc.o: ../serpent.c
+	$(CC) -c $(CFLAGS) -DUSE_ASM -o $@ $<
+
+test-sha512.o: test-sha512.c sha512-table.h
+
+test-serpent8x.o: test-serpent8x.c serpent128-table.h serpent256-table.h
+	$(CC) -c $(CFLAGS) -DUSE_ASM -o $@ $<
+
+test-serpent.o: test-serpent.c serpent128-table.h serpent256-table.h
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+
+# self-test build rules
+#
 test-sha512: $(OBJ_TEST_SHA512)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_SHA512) -o $@ 
+	$(CC) $(LDFLAGS) $(OBJ_TEST_SHA512) -o $@
 
 test-pbkdf2: $(OBJ_TEST_PBKDF2)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_PBKDF2) -o $@ 
+	$(CC) $(LDFLAGS) $(OBJ_TEST_PBKDF2) -o $@
 
+test-serpent: $(OBJ_TEST_SERPENT)
+	$(CC) $(LDFLAGS) $(OBJ_TEST_SERPENT) -o $@
 
-test: test-sha512 test-pbkdf2
-	@echo "Testing sha512..."
-	@./test-sha512
-	@echo "Testing pbkdf2..."
-	@./test-pbkdf2
-	
+test-serpent-x86-64: $(OBJ_TEST_SERPENT_X86_64)
+	$(CC) $(LDFLAGS) $(OBJ_TEST_SERPENT_X86_64) -o $@
+
+test-serpent-avx: $(OBJ_TEST_SERPENT_AVX)
+	$(CC) $(LDFLAGS) $(OBJ_TEST_SERPENT_AVX) -o $@

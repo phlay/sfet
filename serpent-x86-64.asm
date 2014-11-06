@@ -22,7 +22,6 @@
 %define RK	RDX
 
 
-
 %macro add_key	5
 	mov	TMP, [RK + 4*(4*%5 + 0)]
 	xor	%1, TMP
@@ -199,7 +198,6 @@
 	xor	%4, %3
 %endmacro
 
-
 %macro S6	5
 	mov	%5, %2
 	xor	%4, %1
@@ -241,6 +239,7 @@
 	or	%5, %1
 	xor	%5, %2
 %endmacro
+
 
 %macro round	6
 %assign i (%6 % 8)

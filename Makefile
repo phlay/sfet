@@ -28,7 +28,7 @@ ifeq "$(HAVE_GETRANDOM)" "yes"
 endif
 
 
-.PHONY: clean all install
+.PHONY: clean all install test
 .SUFFIXES: .asm
 
 all: venom
@@ -38,7 +38,7 @@ ${OBJ}: defaults.h config.mk
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<
 .asm.o:
-	$(AS) $(ASFLAGS) $<
+	$(AS) $(ASFLAGS) $< -o $@
 
 
 venom: $(OBJ)
@@ -46,7 +46,11 @@ venom: $(OBJ)
 
 clean:
 	rm -f *~ *.o venom
+	make -C test clean
 
 install: all
 	@mkdir -p ${DESTDIR}${PREFIX}/bin
 	install -m 0755 venom ${DESTDIR}${PREFIX}/bin
+
+test:
+	make -s -C test

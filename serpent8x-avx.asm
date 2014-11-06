@@ -444,3 +444,20 @@ serpent8x_ctr:
 	store8		RI, RJ, RK, RL, TA, TB, TC, TD, RDI
 
 	ret
+
+%ifdef SELFTEST
+;; serpent8x_encrypt - ecb encrypt 8 blocks in parallel (only used in selftest)
+;;
+;; Input:
+;;      RDI     dst
+;;      RSI     src
+;;      RDX     expkey
+;;
+        global  serpent8x_encrypt
+serpent8x_encrypt:
+        load8   RA, RB, RC, RD, RE, RF, RG, RH, RSI
+        call    serpent8x
+        store8  RA, RB, RC, RD, RE, RF, RG, RH, RDI
+        ret
+
+%endif

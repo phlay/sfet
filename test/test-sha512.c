@@ -8,7 +8,7 @@
 
 #define BUFLEN		(16*1024)
 
-struct check_dh {
+struct {
 	int		len;
 	uint8_t		buffer[BUFLEN];
 	uint8_t		hash[64];

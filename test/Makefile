@@ -7,15 +7,15 @@ ASFLAGS = -f elf64 -dSELFTEST
 
 include ../config.mk
 
-OBJ_TEST_SHA512 = test-sha512.o sha512.o
-OBJ_TEST_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
-OBJ_TEST_SERPENT = test-serpent.o serpent.o
-OBJ_TEST_SERPENT_X86_64 = test-serpent.o serpent-noenc.o serpent-x86-64.o
-OBJ_TEST_SERPENT_AVX = test-serpent8x.o serpent-noenc.o serpent8x-avx.o
+OBJ_SHA512 = test-sha512.o sha512.o
+OBJ_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
+OBJ_SERPENT = test-serpent.o serpent.o
+OBJ_SERPENT_X86_64 = test-serpent.o serpent-noenc.o serpent-x86-64.o
+OBJ_SERPENT_AVX = test-serpent8x.o serpent-noenc.o serpent8x-avx.o
+OBJ_EAX_SERPENT = test-eax-serpent.o serpent.o eax-serpent.o omac-serpent.o
 
 
-
-TESTS = sha512 pbkdf2 serpent
+TESTS = sha512 pbkdf2 serpent eax-serpent
 
 ifeq "$(USE_ASM)" "yes"
 	TESTS += serpent-x86-64
@@ -58,6 +58,10 @@ serpent-avx: test-serpent-avx
 	@echo "Testing serpent-avx..."
 	@./test-serpent-avx
 
+eax-serpent: test-eax-serpent
+	@echo "Testing eax-serpent..."
+	@./test-eax-serpent
+
 
 # general object rules
 #
@@ -83,20 +87,26 @@ test-serpent8x.o: test-serpent8x.c serpent128-table.h serpent256-table.h
 test-serpent.o: test-serpent.c serpent128-table.h serpent256-table.h
 	$(CC) -c $(CFLAGS) -o $@ $<
 
+test-eax-serpent.o: test-eax-serpent.c eax-serpent-table.h
+	$(CC) -c $(CFLAGS) -o $@ $<
+
 
 # self-test build rules
 #
-test-sha512: $(OBJ_TEST_SHA512)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_SHA512) -o $@
+test-sha512: $(OBJ_SHA512)
+	$(CC) $(LDFLAGS) $(OBJ_SHA512) -o $@
 
-test-pbkdf2: $(OBJ_TEST_PBKDF2)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_PBKDF2) -o $@
+test-pbkdf2: $(OBJ_PBKDF2)
+	$(CC) $(LDFLAGS) $(OBJ_PBKDF2) -o $@
 
-test-serpent: $(OBJ_TEST_SERPENT)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_SERPENT) -o $@
+test-serpent: $(OBJ_SERPENT)
+	$(CC) $(LDFLAGS) $(OBJ_SERPENT) -o $@
 
-test-serpent-x86-64: $(OBJ_TEST_SERPENT_X86_64)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_SERPENT_X86_64) -o $@
+test-serpent-x86-64: $(OBJ_SERPENT_X86_64)
+	$(CC) $(LDFLAGS) $(OBJ_SERPENT_X86_64) -o $@
 
-test-serpent-avx: $(OBJ_TEST_SERPENT_AVX)
-	$(CC) $(LDFLAGS) $(OBJ_TEST_SERPENT_AVX) -o $@
+test-serpent-avx: $(OBJ_SERPENT_AVX)
+	$(CC) $(LDFLAGS) $(OBJ_SERPENT_AVX) -o $@
+
+test-eax-serpent: $(OBJ_EAX_SERPENT)
+	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT) -o $@

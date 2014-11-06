@@ -13,16 +13,18 @@ OBJ_SERPENT = test-serpent.o serpent.o
 OBJ_SERPENT_X86_64 = test-serpent.o serpent-noenc.o serpent-x86-64.o
 OBJ_SERPENT_AVX = test-serpent8x.o serpent-noenc.o serpent8x-avx.o
 OBJ_EAX_SERPENT = test-eax-serpent.o serpent.o eax-serpent.o omac-serpent.o
+OBJ_EAX_SERPENT_X86_64 = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent-noenc.o serpent-x86-64.o
+OBJ_EAX_SERPENT_AVX = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent.o serpent8x-avx.o
 
 
 TESTS = sha512 pbkdf2 serpent eax-serpent
 
 ifeq "$(USE_ASM)" "yes"
-	TESTS += serpent-x86-64
+	TESTS += serpent-x86-64 eax-serpent-x86-64
 endif
 
 ifeq "$(USE_ASM_AVX)" "yes"
-	TESTS += serpent-avx
+	TESTS += serpent-avx eax-serpent-avx
 endif
 
 
@@ -62,6 +64,13 @@ eax-serpent: test-eax-serpent
 	@echo "Testing eax-serpent..."
 	@./test-eax-serpent
 
+eax-serpent-x86-64: test-eax-serpent-x86-64
+	@echo "Testing eax-serpent-x86-64..."
+	@./test-eax-serpent-x86-64
+
+eax-serpent-avx: test-eax-serpent-avx
+	@echo "Testing eax-serpent-avx..."
+	@./test-eax-serpent-avx
 
 # general object rules
 #
@@ -110,3 +119,9 @@ test-serpent-avx: $(OBJ_SERPENT_AVX)
 
 test-eax-serpent: $(OBJ_EAX_SERPENT)
 	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT) -o $@
+
+test-eax-serpent-x86-64: $(OBJ_EAX_SERPENT_X86_64)
+	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT_X86_64) -o $@
+
+test-eax-serpent-avx: $(OBJ_EAX_SERPENT_AVX)
+	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT_AVX) -o $@

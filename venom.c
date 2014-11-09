@@ -327,14 +327,15 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 void
 usage()
 {
-	fprintf(stderr, "Usage: venom [-edsvf] [-i <iter>] [-m <mode>] [<input>] [<output>]\n");
+	fprintf(stderr, "Usage: venom [-edsvf] [-i <iter>] [-p <fn>] [-m <mode>] [<input>] [<output>]\n");
 	fprintf(stderr, "options:\n");
+	fprintf(stderr, "  -d\t\tdecrypt (default)\n");
 	fprintf(stderr, "  -e\t\tencrypt\n");
-	fprintf(stderr, "  -d\t\tdecrypt\n");
 	fprintf(stderr, "  -s\t\tshow file metadata\n");
 	fprintf(stderr, "  -v\t\tverbose\n");
 	fprintf(stderr, "  -f\t\tforce\n");
 	fprintf(stderr, "  -i n\t\tset pbkdf2 iteration number to n\n");
+	fprintf(stderr, "  -p <file>\tread password from <file> instead of %s\n", DEF_PASSWD_SRC);
 	fprintf(stderr, "  -m <mode>\tset file mode bits of output\n");
 }
 
@@ -342,15 +343,17 @@ usage()
 int
 main(int argc, char *argv[])
 {
-	char mode = 0;
+	char mode = 'd';
 
 	int verbose = 0;
 	int force = 0;
 
 	char *inputfn = "-";
 	char *outputfn = "-";
+	char *passfn = DEF_PASSWD_SRC;
 
-	FILE *in, *out;
+	FILE *in, *out, *passfile;
+
 	char tmpoutfn[PATH_MAX];
 	long outmode = -1;
 
@@ -359,11 +362,7 @@ main(int argc, char *argv[])
 
 	int rc;
 
-
-	/*
-	 * fill in default parameter
-	 */
-
+	/* initialize keyparam structure */
 	keyparam.iter = DEF_ITERATION;
 
 
@@ -371,7 +370,7 @@ main(int argc, char *argv[])
 	 * parse arguments
 	 */
 
-	while ((rc = getopt(argc, argv, "hedsvfi:m:")) != -1) {
+	while ((rc = getopt(argc, argv, "hedsvfi:m:p:")) != -1) {
 		switch (rc) {
 		case 'h':
 			usage();
@@ -386,6 +385,10 @@ main(int argc, char *argv[])
 
 		case 'i':
 			keyparam.iter = atoll(optarg);
+			break;
+
+		case 'p':
+			passfn = optarg;
 			break;
 
 		case 'm':
@@ -431,6 +434,17 @@ main(int argc, char *argv[])
 		inputfn = argv[0];
 	if (argc > 1)
 		outputfn = argv[1];
+
+	/*
+	 * open password source
+	 */
+	if (strcmp(passfn, "-") == 0)
+		passfile = stdin;
+	else {
+		passfile = fopen(passfn, "r");
+		if (passfile == NULL)
+			err(1, "can't open password source: %s", passfn);
+	}
 
 
 	/* 
@@ -500,10 +514,12 @@ main(int argc, char *argv[])
 	 * password.
 	 */
 
-	rc = read_pass_tty(keyparam.passwd, sizeof(keyparam.passwd), "Password",
-			mode == 'e' ? "Confirm" : NULL);
+	rc = read_pass(passfile, keyparam.passwd, sizeof(keyparam.passwd),
+			"Password: ", mode == 'e' ? "Confirm: " : NULL);
 	if (rc == -1)
-		errx(1, "can't read password");
+		exit(1);
+
+	fclose(passfile);
 
 
 	/* generate nonce */

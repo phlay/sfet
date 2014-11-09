@@ -45,67 +45,67 @@ read_line(uint8_t *out, size_t max, FILE *stream)
 }
 
 
-
 /*
- * This function prompts for a password (promptA) and reads it from /dev/tty
- * with fallback to stdin. In case /dev/tty (or stdin) is a terminal and promptB
- * is given, a confirmation is also requested (promptB) and compared to the password.
- * This is repeated until password and confirmation matches.
+ * read_pass - read a password from file or user.
  *
- * The written password will not be zero terminated, but be padded with
- * a binary one and as much zeros as needed (i.e. one 0x80 and the rest 0x00).
- * The length of the unpadded-password is returned.
+ * If input stream fp is a terminal (like /dev/tty) and promptA and promptB are
+ * are not NULL they are used to prompt the user for a password and a password 
+ * confirmation. This is repeated until both entries are equal.
+ *
+ * If fp is not a terminal, the password is read just one time (even if
+ * promptB is given).
+ *
+ * Instead of zero-terminating the password it's length will be returned.
+ * But the password will be padded to max bytes, by attaching one binary zero
+ * and as much zeros as needed. This could be used to work with constant-length
+ * passwords.
  */
 int
-read_pass_tty(uint8_t *passwd, size_t max, const char *promptA, const char *promptB)
+read_pass(FILE *fp, uint8_t *passwd, size_t max, const char *promptA, const char *promptB)
 {
 	uint8_t		 confirm[max];
 
-	FILE		*input;
-	int		 input_fd, input_istty;
+	int		 fp_fd, fp_istty;
 
 	struct termios	 term, term_orig;
-	int passlen;
-	int rc;
+	int		 passlen;
+	int		 rc;
 
-	input = fopen("/dev/tty", "r");
-	if (input == NULL)
-		input = stdin;
 
-	input_fd = fileno(input);
-	input_istty = isatty(input_fd);
+	fp_fd = fileno(fp);
+	fp_istty = isatty(fp_fd);
 
-	if (input_istty) {
-		if (tcgetattr(input_fd, &term) == -1) {
+	if (fp_istty) {
+		if (tcgetattr(fp_fd, &term) == -1) {
 			warn("can't read terminal attributes");
-			goto error1;
+			return -1;
 		}
 
 		memcpy(&term_orig, &term, sizeof(struct termios));
 		term.c_lflag &= ~ECHO;
 		term.c_lflag |= ECHONL;
 
-		if (tcsetattr(input_fd, TCSANOW, &term) == -1) {
+		if (tcsetattr(fp_fd, TCSANOW, &term) == -1) {
 			warn("can't write terminal attributes");
-			goto error1;
+			return -1;
 		}
 	}
 
 	for (;;) {
 		do {
-			if (input_istty && promptA)
-				fprintf(stderr, "%s: ", promptA);
+			if (fp_istty && promptA)
+				fprintf(stderr, "%s", promptA);
 
-			passlen = read_line(passwd, max, input);
+			passlen = read_line(passwd, max, fp);
 			if (passlen == -1) {
 				warn("can't read password");
-				goto error2;
+				goto errout;
 			}
 			if (passlen > max) {
 				/* without a tty this is fatal */
-				if (!input_istty) {
+				if (!fp_istty) {
 					warnx("password to long");
-					goto error2;
+					goto errout;
 				}
 				fprintf(stderr, "password to long - please try again\n");
 			}
@@ -113,16 +113,16 @@ read_pass_tty(uint8_t *passwd, size_t max, const char *promptA, const char *prom
 
 
 		/* need a confirmation? */
-		if (promptB == NULL || !input_istty)
+		if (promptB == NULL || !fp_istty)
 			break;
 
-		if (input_istty)
-			fprintf(stderr, "%s: ", promptB);
+		if (fp_istty)
+			fprintf(stderr, "%s", promptB);
 
-		rc = read_line(confirm, max, input);
+		rc = read_line(confirm, max, fp);
 		if (rc == -1) {
 			warn("can't read confirmation");
-			goto error2;
+			goto errout;
 		}
 
 		if (memcmp(passwd, confirm, max) == 0)
@@ -132,22 +132,15 @@ read_pass_tty(uint8_t *passwd, size_t max, const char *promptA, const char *prom
 	}
 
 	/* reset terminal */
-	if (input_istty)
-		tcsetattr(input_fd, TCSANOW, &term_orig);
-
-	if (input != stdin)
-		fclose(input);
+	if (fp_istty)
+		tcsetattr(fp_fd, TCSANOW, &term_orig);
 
 	return passlen;
 
-error2:
+errout:
 	/* XXX better use TCSAFLUSH? */
-	if (input_istty)
-		tcsetattr(input_fd, TCSANOW, &term_orig);
-
-error1:
-	if (input != stdin)
-		fclose(input);
+	if (fp_istty)
+		tcsetattr(fp_fd, TCSANOW, &term_orig);
 
 	return -1;
 }

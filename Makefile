@@ -45,12 +45,28 @@ venom: $(OBJ)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ)
 
 clean:
-	rm -f *~ *.o venom
+	rm -f *~ *.o venom check.bin
 	make -C test clean
 
 install: all
-	@mkdir -p ${DESTDIR}${PREFIX}/bin
-	install -m 0755 venom ${DESTDIR}${PREFIX}/bin
+	@mkdir -p $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 venom $(DESTDIR)$(PREFIX)/bin
 
+# test venom binary
+test-venom: venom
+	@echo "test venom binary..."
+	@for pass in A B C; do \
+	for pat in 0 rnd; do \
+	for size in 1 15 1048577; do \
+		echo "testing $$pass / $$pat / $$size..." ; \
+		./venom -f -p test-files/password-$${pass}.txt \
+			test-files/crypt_$${pass}_$${pat}_$${size}.venom \
+			check.bin ; \
+		cmp check.bin test-files/test_$${pat}_$${size}.bin ; \
+	done done done
+
+
+# test modules separately
 test:
 	make -s -C test
+

@@ -13,9 +13,13 @@ ASFLAGS = -Ox -f elf64
 
 OBJ = utils.o serpent.o omac-serpent.o eax-serpent.o sha512.o pbkdf2-hmac-sha512.o readpass.o venom.o
 
-ifeq ($(USE_ASM), yes)
+ifeq ($(HAVE_GETRANDOM), yes)
+	CFLAGS += -DHAVE_GETRANDOM
+endif
+
+ifeq ($(USE_ASM_X86_64), yes)
+	CFLAGS += -DUSE_ASM_X86_64
 	OBJ += serpent-x86-64.o
-	CFLAGS += -DUSE_ASM
 endif
 
 ifeq ($(USE_ASM_AVX), yes)
@@ -23,13 +27,10 @@ ifeq ($(USE_ASM_AVX), yes)
 	CFLAGS += -DUSE_ASM_AVX
 endif
 
-ifeq ($(HAVE_GETRANDOM), yes)
-	CFLAGS += -DHAVE_GETRANDOM
-endif
-
 
 .PHONY: clean all install test
 .SUFFIXES: .asm
+
 
 all: venom
 
@@ -69,4 +70,3 @@ test-venom: venom
 # test modules separately
 test:
 	make -s -C test
-

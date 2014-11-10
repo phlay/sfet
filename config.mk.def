@@ -1,11 +1,14 @@
-# enable x86_64 assembly code (only slightly faster than C at the moment)
-#
-USE_ASM=no
-
-# enable x86_64 avx assembly to speed up serpent counter mode
-#
-USE_ASM_AVX=no
-
-# if you have a linux system with getrandom() system call set this to yes
+# if you have a linux system with getrandom() system call, set to yes
 #
 HAVE_GETRANDOM=no
+
+# enable x86_64 assembly code (only slightly faster than C at the moment)
+#
+USE_ASM_X86_64=no
+
+# enable x86_64 AVX assembly to speed up serpent counter mode
+#
+# NOTE: this is only available for 64bit modes (like elf64) and
+# won't work on cpus without AVX support!
+#
+USE_ASM_AVX=no

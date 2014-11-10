@@ -1,3 +1,5 @@
+include ../config.mk
+
 CC = cc
 CFLAGS = -std=gnu99 -Wall -pedantic -O2 -I.. -DSELFTEST
 LDFLAGS =
@@ -5,7 +7,6 @@ LDFLAGS =
 AS = nasm
 ASFLAGS = -Ox -f elf64 -dSELFTEST
 
-include ../config.mk
 
 OBJ_SHA512 = test-sha512.o sha512.o
 OBJ_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
@@ -19,7 +20,7 @@ OBJ_EAX_SERPENT_AVX = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent.o 
 
 TESTS = sha512 pbkdf2 serpent eax-serpent
 
-ifeq "$(USE_ASM)" "yes"
+ifeq "$(USE_ASM_X86_64)" "yes"
 	TESTS += serpent-x86-64 eax-serpent-x86-64
 endif
 
@@ -86,12 +87,12 @@ eax-serpent-avx: test-eax-serpent-avx
 # special case object rules
 #
 serpent-noenc.o: ../serpent.c
-	$(CC) -c $(CFLAGS) -DUSE_ASM -o $@ $<
+	$(CC) -c $(CFLAGS) -DUSE_ASM_X86_64 -o $@ $<
 
 test-sha512.o: test-sha512.c sha512-table.h
 
 test-serpent8x.o: test-serpent8x.c serpent128-table.h serpent256-table.h
-	$(CC) -c $(CFLAGS) -DUSE_ASM -o $@ $<
+	$(CC) -c $(CFLAGS) -DUSE_ASM_X86_64 -o $@ $<
 
 test-serpent.o: test-serpent.c serpent128-table.h serpent256-table.h
 	$(CC) -c $(CFLAGS) -o $@ $<

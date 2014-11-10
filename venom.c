@@ -36,6 +36,7 @@
 #include "readpass.h"
 
 
+#define VERSION		"2.0pre-1"
 #define FILEVER		6
 #define PASSLEN		512
 
@@ -325,20 +326,39 @@ decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 
 
 void
-usage()
+printusage(FILE *fp)
 {
-	fprintf(stderr, "Usage: venom [-edsvf] [-i <iter>] [-p <fn>] [-m <mode>] [<input>] [<output>]\n");
-	fprintf(stderr, "options:\n");
-	fprintf(stderr, "  -d\t\tdecrypt (default)\n");
-	fprintf(stderr, "  -e\t\tencrypt\n");
-	fprintf(stderr, "  -s\t\tshow file metadata\n");
-	fprintf(stderr, "  -v\t\tverbose\n");
-	fprintf(stderr, "  -f\t\tforce\n");
-	fprintf(stderr, "  -i n\t\tset pbkdf2 iteration number to n\n");
-	fprintf(stderr, "  -p <file>\tread password from <file> instead of %s\n", DEF_PASSWD_SRC);
-	fprintf(stderr, "  -m <mode>\tset file mode bits of output\n");
+	fprintf(fp, "Usage: venom [-hVedsvf] [-p <fn>] [-i <iter>] [-m <mode>] [<input>] [<output>]\n");
+	fprintf(fp, "options:\n");
+	fprintf(fp, "  -h\t\thelp\n");
+	fprintf(fp, "  -V\t\tversion\n");
+	fprintf(fp, "  -e\t\tencrypt\n");
+	fprintf(fp, "  -d\t\tdecrypt (default)\n");
+	fprintf(fp, "  -s\t\tshow file metadata\n");
+	fprintf(fp, "  -v\t\tverbose\n");
+	fprintf(fp, "  -f\t\tforce\n");
+	fprintf(fp, "  -p <file>\tread password from <file> instead of %s\n", DEF_PASSWD_SRC);
+	fprintf(fp, "  -i <n>\tset pbkdf2 iteration number to <n>\n");
+	fprintf(fp, "  -m <mode>\tset file mode bits of output\n");
 }
 
+void
+printversion(FILE *fp)
+{
+	fprintf(fp, "venom %s, file version: %d\n", VERSION, FILEVER);
+
+#if defined(USE_ASM_X86_64) || defined(USE_ASM_AVX)
+	fprintf(fp, "build with: ");
+
+#ifdef USE_ASM_X86_64
+	fprintf(fp, "ASM-X86-64 ");
+#endif
+#ifdef USE_ASM_AVX
+	fprintf(fp, "AVX ");
+#endif
+	fprintf(fp, "\n");
+#endif
+}
 
 int
 main(int argc, char *argv[])
@@ -370,11 +390,15 @@ main(int argc, char *argv[])
 	 * parse arguments
 	 */
 
-	while ((rc = getopt(argc, argv, "hedsvfi:m:p:")) != -1) {
+	while ((rc = getopt(argc, argv, "hVedsvfi:m:p:")) != -1) {
 		switch (rc) {
 		case 'h':
-			usage();
+			printusage(stdout);
 			exit(0);
+		case 'V':
+			printversion(stdout);
+			exit(0);
+
 		case 'v':
 			verbose++;
 			break;
@@ -405,7 +429,8 @@ main(int argc, char *argv[])
 			break;
 
 		default:
-			usage();
+			printusage(stderr);
+			printf("version: %s, fileversion: %d\n", VERSION, FILEVER);
 			exit(1);
 		}
 	}
@@ -422,7 +447,7 @@ main(int argc, char *argv[])
 	}
 
 	if (mode == 0) {
-		usage();
+		printusage(stderr);
 		exit(1);
 	}
 

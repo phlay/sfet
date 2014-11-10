@@ -70,11 +70,11 @@
 	vpor		%1, %1, TA
 %endmacro
 
-%macro transpose	4
-	vpunpckldq	TA, %1, %2
-	vpunpckhdq	TB, %1, %2
-	vpunpckldq	TC, %3, %4
-	vpunpckhdq	%4, %3, %4
+%macro transpose	8
+	vpunpckldq	TA, %5, %6
+	vpunpckhdq	TB, %5, %6
+	vpunpckldq	TC, %7, %8
+	vpunpckhdq	%4, %7, %8
 
 	vpunpcklqdq	%1, TA, TC
 	vpunpckhqdq	%2, TA, TC
@@ -271,34 +271,39 @@
 %endmacro
 
 
+;; add round key and get block-sets in place again
+;;
+%macro add_round_key	0
+	vbroadcastss	TA, [RKEY + 4*0]
+	vpxor	RE, RA, TA
+	vpxor	RA, RI, TA
+	vbroadcastss	TA, [RKEY + 4*1]
+	vpxor	RF, RB, TA
+	vpxor	RB, RJ, TA
+	vbroadcastss	TA, [RKEY + 4*2]
+	vpxor	RG, RC, TA
+	vpxor	RC, RK, TA
+	vbroadcastss	TA, [RKEY + 4*3]
+	vpxor	RH, RD, TA
+	vpxor	RD, RL, TA
 
-;; round <round>
+	add	RKEY, 16
+%endmacro
+
+
+
+;; round <sbox>
 ;;
 %macro serpent_round	1
-	; s-box for this round
-	%assign	j	((%1-1) % 8)
-
 	; apply s-box to first block-set
-	S%[j]	RI, RJ, RK, RL, RA, RB, RC, RD
+	S%1	RI, RJ, RK, RL, RA, RB, RC, RD
 	ltrans	RI, RJ, RK, RL
 
 	; apply s-box to second block-set
-	S%[j]	RA, RB, RC, RD, RE, RF, RG, RH
+	S%1	RA, RB, RC, RD, RE, RF, RG, RH
 	ltrans	RA, RB, RC, RD
 
-	; add round key and get block-sets in place again
-	vbroadcastss	TA, [RKEY + 4*(4*%1 + 0)]
-	vpxor	RE, RA, TA
-	vpxor	RA, RI, TA
-	vbroadcastss	TA, [RKEY + 4*(4*%1 + 1)]
-	vpxor	RF, RB, TA
-	vpxor	RB, RJ, TA
-	vbroadcastss	TA, [RKEY + 4*(4*%1 + 2)]
-	vpxor	RG, RC, TA
-	vpxor	RC, RK, TA
-	vbroadcastss	TA, [RKEY + 4*(4*%1 + 3)]
-	vpxor	RH, RD, TA
-	vpxor	RD, RL, TA
+	add_round_key
 %endmacro
 
 
@@ -332,51 +337,39 @@ section	.text
 serpent8x:
 	vpcmpeqd	TD, TD, TD
 
-	transpose	RA, RB, RC, RD
-	transpose	RE, RF, RG, RH
+	transpose	RI, RJ, RK, RL, RA, RB, RC, RD
+	transpose	RA, RB, RC, RD, RE, RF, RG, RH
 
-	; apply initial key
-	vbroadcastss	TA, [RKEY]
-	vpxor		RA, RA, TA
-	vpxor		RE, RE, TA
-	vbroadcastss	TA, [RKEY + 4*1]
-	vpxor		RB, RB, TA
-	vpxor		RF, RF, TA
-	vbroadcastss	TA, [RKEY + 4*2]
-	vpxor		RC, RC, TA
-	vpxor		RG, RG, TA
-	vbroadcastss	TA, [RKEY + 4*3]
-	vpxor		RD, RD, TA
-	vpxor		RH, RH, TA
+	add_round_key
 
-	; do 31 rounds
-%assign i 1
-%rep 31
-	serpent_round	i
+	mov		ECX, 3
+.loop:
+	serpent_round	0
+	serpent_round	1
+	serpent_round	2
+	serpent_round	3
+	serpent_round	4
+	serpent_round	5
+	serpent_round	6
+	serpent_round	7
+	dec		ECX
+	jnz		.loop
 
-%assign	i (i+1)
-%endrep
+	serpent_round	0
+	serpent_round	1
+	serpent_round	2
+	serpent_round	3
+	serpent_round	4
+	serpent_round	5
+	serpent_round	6
 
 	; last round without linear transformation
 	S7		RI, RJ, RK, RL, RA, RB, RC, RD
 	S7		RA, RB, RC, RD, RE, RF, RG, RH
+	add_round_key
 
-	; add final round key
-	vbroadcastss	TA, [RKEY + 4*(4*32 + 0)]
-	vpxor		RE, RA, TA
-	vpxor		RA, RI, TA
-	vbroadcastss	TA, [RKEY + 4*(4*32 + 1)]
-	vpxor		RF, RB, TA
-	vpxor		RB, RJ, TA
-	vbroadcastss	TA, [RKEY + 4*(4*32 + 2)]
-	vpxor		RG, RC, TA
-	vpxor		RC, RK, TA
-	vbroadcastss	TA, [RKEY + 4*(4*32 + 3)]
-	vpxor		RH, RD, TA
-	vpxor		RD, RL, TA
-
-	transpose	RA, RB, RC, RD
-	transpose	RE, RF, RG, RH
+	transpose	RA, RB, RC, RD, RA, RB, RC, RD
+	transpose	RE, RF, RG, RH, RE, RF, RG, RH
 
 	ret
 

@@ -36,7 +36,7 @@
 #include "readpass.h"
 
 
-#define VERSION		6
+#define FILEVER		6
 #define PASSLEN		512
 
 
@@ -95,9 +95,9 @@ read_header(FILE *in, struct keyparam *kp)
 		warnx("can't read version from file");
 		return -1;
 	}
-	if (be16toh(version) != VERSION) {
+	if (be16toh(version) != FILEVER) {
 		warnx("wrong file version %d (need %d)",
-		      be16toh(version), VERSION);
+		      be16toh(version), FILEVER);
 		return -1;
 	}
 
@@ -131,7 +131,7 @@ read_header(FILE *in, struct keyparam *kp)
 int
 write_header(FILE *out, const struct keyparam *kp)
 {
-	uint16_t version = htobe16(VERSION);
+	uint16_t version = htobe16(FILEVER);
 	uint64_t iter = htobe64(kp->iter);
 	size_t n;
 

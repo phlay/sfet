@@ -1,29 +1,29 @@
-# please see config.mk for configuration options
+# see config.mk for configuration options
 #
+
+include config.mk
 
 CC = gcc
 CFLAGS = -std=gnu99 -Wall -pedantic -O2
 LDFLAGS = 
 
 AS = nasm
-ASFLAGS = -f elf64
-
-include config.mk
+ASFLAGS = -Ox -f elf64
 
 
 OBJ = utils.o serpent.o omac-serpent.o eax-serpent.o sha512.o pbkdf2-hmac-sha512.o readpass.o venom.o
 
-ifeq "$(USE_ASM)" "yes"
+ifeq ($(USE_ASM), yes)
 	OBJ += serpent-x86-64.o
 	CFLAGS += -DUSE_ASM
 endif
 
-ifeq "$(USE_ASM_AVX)" "yes"
+ifeq ($(USE_ASM_AVX), yes)
 	OBJ += serpent8x-avx.o
 	CFLAGS += -DUSE_ASM_AVX
 endif
 
-ifeq "$(HAVE_GETRANDOM)" "yes"
+ifeq ($(HAVE_GETRANDOM), yes)
 	CFLAGS += -DHAVE_GETRANDOM
 endif
 

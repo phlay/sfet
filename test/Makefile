@@ -3,7 +3,7 @@ CFLAGS = -std=gnu99 -Wall -pedantic -O2 -I.. -DSELFTEST
 LDFLAGS =
 
 AS = nasm
-ASFLAGS = -f elf64 -dSELFTEST
+ASFLAGS = -Ox -f elf64 -dSELFTEST
 
 include ../config.mk
 

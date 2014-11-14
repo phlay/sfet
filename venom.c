@@ -232,14 +232,16 @@ encrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
 	size_t n;
 
 	/* encryption loop */
-	while ((n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE, in)) != 0) {
+	do {
+		n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE, in);
 		eax_serpent_encrypt(C, buffer, buffer, n);
 
 		if (fwrite(buffer, sizeof(uint8_t), n, out) != n) {
 			warn("can't write to output file");
 			return -1;
 		}
-	}
+	} while (n == DEF_BUFSIZE);
+
 	if (ferror(in)) {
 		warn("can't read from input file");
 		return -1;

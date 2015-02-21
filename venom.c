@@ -36,7 +36,7 @@
 #include "readpass.h"
 
 
-#define VERSION		"2.0pre-1"
+#define VERSION		"2.0"
 #define FILEVER		6
 #define PASSLEN		512
 

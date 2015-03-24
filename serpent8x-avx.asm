@@ -390,7 +390,7 @@ serpent8x_ctr:
 	vpcmpeqd	TD, TD, TD
 	vpsrldq		TD, TD, 8
 
-	; TD <- permutation vector for little vs big endian conversion
+	; TB <- permutation vector for little vs big endian conversion
 	vmovdqa		TB, [endian_perm_vector]
 
 	; load counter and convert it to little endian

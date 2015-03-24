@@ -75,7 +75,9 @@ direxists(const char *dir)
 
 
 
-#ifndef HAVE_GETRANDOM
+#ifdef HAVE_GETRANDOM
+#include <linux/random.h>
+#else
 
 #define GRND_NONBLOCK	1
 #define GRND_RANDOM	2
@@ -105,7 +107,6 @@ getrandom(void *buf, size_t buflen, unsigned int flags)
 
 	return rval;
 }
-
 #endif
 
 

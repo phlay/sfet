@@ -16,9 +16,10 @@ OBJ_SERPENT_AVX = test-serpent8x.o serpent-noenc.o serpent8x-avx.o
 OBJ_EAX_SERPENT = test-eax-serpent.o serpent.o eax-serpent.o omac-serpent.o
 OBJ_EAX_SERPENT_X86_64 = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent-noenc.o serpent-x86-64.o
 OBJ_EAX_SERPENT_AVX = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent.o serpent8x-avx.o
+OBJ_POLY1305 = test-poly1305.o poly1305.o printvec.o
 
 
-TESTS = sha512 pbkdf2 serpent eax-serpent
+TESTS = sha512 pbkdf2 serpent eax-serpent poly1305
 
 ifeq "$(USE_ASM_X86_64)" "yes"
 	TESTS += serpent-x86-64 eax-serpent-x86-64
@@ -73,6 +74,10 @@ eax-serpent-avx: test-eax-serpent-avx
 	@echo "Testing eax-serpent-avx..."
 	@./test-eax-serpent-avx
 
+poly1305: test-poly1305
+	@echo "Testing poly1305..."
+	@./test-poly1305
+
 # general object rules
 #
 .c.o:
@@ -126,3 +131,6 @@ test-eax-serpent-x86-64: $(OBJ_EAX_SERPENT_X86_64)
 
 test-eax-serpent-avx: $(OBJ_EAX_SERPENT_AVX)
 	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT_AVX) -o $@
+
+test-poly1305: $(OBJ_POLY1305)
+	$(CC) $(LDFLAGS) $(OBJ_POLY1305) -o $@

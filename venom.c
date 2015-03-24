@@ -1,7 +1,4 @@
-/* venom - file crypting utility using serpent in eax mode.
- *
- * a venom file consists of a header (see struct header below), the encrypted
- * user data and finally a 16 byte tag authenticating header and encrypted data.
+/* main program for venom file encryption
  *
  * Written by Philipp Lay <philipp.lay@illunis.net>
  *
@@ -36,8 +33,8 @@
 #include "readpass.h"
 
 
-#define VERSION		"2.0"
-#define FILEVER		6
+#define VERSION		"pre3.0-0"
+#define FILEVER		7
 #define PASSLEN		512
 
 

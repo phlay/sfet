@@ -281,7 +281,7 @@ add128(uint8_t out[16], const uint8_t a[16], const uint8_t b[16])
 
 
 void
-poly1305_init(struct poly1305 *ctx, const uint8_t r[16], const uint8_t encno[16])
+poly1305_init(struct poly1305 *ctx, const uint8_t r[16])
 {
 #if 1
 	uint8_t prepr[16];
@@ -314,9 +314,6 @@ poly1305_init(struct poly1305 *ctx, const uint8_t r[16], const uint8_t encno[16]
 		ctx->state[i] = 0;
 
 	ctx->fill = 0;
-
-	/* save encrypted nonce for later */
-	memcpy(ctx->encno, encno, 16);
 }
 
 
@@ -348,7 +345,7 @@ poly1305_update(struct poly1305 *ctx, const uint8_t *data, size_t len)
 
 
 void
-poly1305_mac(struct poly1305 *ctx, uint8_t mac[16])
+poly1305_mac(struct poly1305 *ctx, const uint8_t encno[16], uint8_t mac[16])
 {
 	uint8_t pack[16];
 
@@ -362,5 +359,5 @@ poly1305_mac(struct poly1305 *ctx, uint8_t mac[16])
 	}
 
 	export1305(pack, ctx->state);
-	add128(mac, pack, ctx->encno);
+	add128(mac, pack, encno);
 }

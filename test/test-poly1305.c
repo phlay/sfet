@@ -33,9 +33,9 @@ int main()
 
 
 	for (i = 0; i < table_num; i++) {
-		poly1305_init(&poly, table[i].r, table[i].encno);
+		poly1305_init(&poly, table[i].r);
 		poly1305_update(&poly, table[i].msg, i);
-		poly1305_mac(&poly, check);
+		poly1305_mac(&poly, table[i].encno, check);
 
 		if (memcmp(check, table[i].mac, 16) != 0) {
 			fprintf(stderr, "poly1305-selftest: test number %d failed\n", i+1);

@@ -386,7 +386,7 @@ serpent8x:
 
 	global	serpent8x_ctr
 serpent8x_ctr:
-	; TC <- 2^64 - 1
+	; TD <- 2^64 - 1
 	vpcmpeqd	TD, TD, TD
 	vpsrldq		TD, TD, 8
 

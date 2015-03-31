@@ -11,22 +11,29 @@ ASFLAGS = -Ox -f elf64 -dSELFTEST
 OBJ_SHA512 = test-sha512.o sha512.o
 OBJ_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
 OBJ_SERPENT = test-serpent.o serpent.o
-OBJ_SERPENT_X86_64 = test-serpent.o serpent-noenc.o serpent-x86-64.o
-OBJ_SERPENT_AVX = test-serpent8x.o serpent-noenc.o serpent8x-avx.o
-OBJ_EAX_SERPENT = test-eax-serpent.o serpent.o eax-serpent.o omac-serpent.o
-OBJ_EAX_SERPENT_X86_64 = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent-noenc.o serpent-x86-64.o
-OBJ_EAX_SERPENT_AVX = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent.o serpent8x-avx.o
-OBJ_POLY1305 = test-poly1305.o poly1305.o printvec.o
+OBJ_SERPENT_AVX = test-serpent8x.o serpent.o serpent8x-avx.o
+OBJ_EAX_SERPENT = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent.o
+OBJ_POLY1305 = test-poly1305.o printvec.o
 
 
 TESTS = sha512 pbkdf2 serpent eax-serpent poly1305
 
 ifeq "$(USE_ASM_X86_64)" "yes"
-	TESTS += serpent-x86-64 eax-serpent-x86-64
+	CFLAGS += -DUSE_ASM_X86_64
+
+	OBJ_SERPENT += serpent-x86-64.o
+	OBJ_EAX_SERPENT += serpent-x86-64.o
+	OBJ_POLY1305 += poly1305-x86-64.o
+else
+	OBJ_POLY1305 += poly1305.o
 endif
 
 ifeq "$(USE_ASM_AVX)" "yes"
-	TESTS += serpent-avx eax-serpent-avx
+	CFLAGS += -DUSE_ASM_AVX
+
+	OBJ_EAX_SERPENT += serpent8x-avx.o
+
+	TESTS += serpent-avx
 endif
 
 
@@ -54,10 +61,6 @@ serpent: test-serpent
 	@echo "Testing serpent..."
 	@./test-serpent
 
-serpent-x86-64: test-serpent-x86-64
-	@echo "Testing serpent-x86-64..."
-	@./test-serpent-x86-64
-
 serpent-avx: test-serpent-avx
 	@echo "Testing serpent-avx..."
 	@./test-serpent-avx
@@ -65,10 +68,6 @@ serpent-avx: test-serpent-avx
 eax-serpent: test-eax-serpent
 	@echo "Testing eax-serpent..."
 	@./test-eax-serpent
-
-eax-serpent-x86-64: test-eax-serpent-x86-64
-	@echo "Testing eax-serpent-x86-64..."
-	@./test-eax-serpent-x86-64
 
 eax-serpent-avx: test-eax-serpent-avx
 	@echo "Testing eax-serpent-avx..."
@@ -91,18 +90,19 @@ poly1305: test-poly1305
 
 # special case object rules
 #
-serpent-noenc.o: ../serpent.c
-	$(CC) -c $(CFLAGS) -DUSE_ASM_X86_64 -o $@ $<
 
 test-sha512.o: test-sha512.c sha512-table.h
 
 test-serpent8x.o: test-serpent8x.c serpent128-table.h serpent256-table.h
-	$(CC) -c $(CFLAGS) -DUSE_ASM_X86_64 -o $@ $<
+	$(CC) -c $(CFLAGS) -o $@ $<
 
 test-serpent.o: test-serpent.c serpent128-table.h serpent256-table.h
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 test-eax-serpent.o: test-eax-serpent.c eax-serpent-table.h
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+test-poly1305.o: test-poly1305.c poly1305-table.h
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 
@@ -117,20 +117,11 @@ test-pbkdf2: $(OBJ_PBKDF2)
 test-serpent: $(OBJ_SERPENT)
 	$(CC) $(LDFLAGS) $(OBJ_SERPENT) -o $@
 
-test-serpent-x86-64: $(OBJ_SERPENT_X86_64)
-	$(CC) $(LDFLAGS) $(OBJ_SERPENT_X86_64) -o $@
-
 test-serpent-avx: $(OBJ_SERPENT_AVX)
 	$(CC) $(LDFLAGS) $(OBJ_SERPENT_AVX) -o $@
 
 test-eax-serpent: $(OBJ_EAX_SERPENT)
 	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT) -o $@
-
-test-eax-serpent-x86-64: $(OBJ_EAX_SERPENT_X86_64)
-	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT_X86_64) -o $@
-
-test-eax-serpent-avx: $(OBJ_EAX_SERPENT_AVX)
-	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT_AVX) -o $@
 
 test-poly1305: $(OBJ_POLY1305)
 	$(CC) $(LDFLAGS) $(OBJ_POLY1305) -o $@

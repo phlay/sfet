@@ -1,28 +1,6 @@
-; optimization ideas:
-;   - push and pop is slow, maybe don't cache Key20Ri and instead
-;     calculate them with (compiled 14 bytes each):
-;	mov rax, KeyRi
-;	shl rax, 2
-;	add rax, KeyRi
-;	shl rax, 2
-;     KeyR0 and KeyR1 could be renamed in tmpA and tmpB
-;   - rax, rbx, rdx, r14 and 15 would be free than
-;   - test if lods instructions are slow and replace them if needed
-;   - use sse instructions
-;   - use rbp for pointing to context?
-;
+%use smartalign
 
-
-%define state0	R8
-%define state1	R9
-%define state2	R10
-
-%define KeyR0	R11
-%define KeyR1	R12
-%define KeyR2	R13
-%define Key20R1	R14
-%define Key20R2	R15
-
+alignmode p6
 
 
 ;
@@ -50,39 +28,50 @@ endstruc
 ;
 ; mulr - performs: state <- (state * r) mod 2^130-5
 ;
-; Changes: rax, rbx, rcx, state0, state1, state2
+; Changes: rax, rbx, rcx, rdx, state0, state1, state2
 ;
 ; expects:
-;	rbp					0xfffffffffff
+;	mask					0xfffffffffff
 ;	state0 + state1*2^44 + state2*2^88	state
 ;	KeyR0 + KeyR1*2^44 + KeyR2*2^88		r
 ;	Key20R1					20*KeyR1
 ;	Key20R2					20*KeyR2
 ;
-%macro	mulr	0
-	push	rdx
 
+%define state0	r8
+%define state1	r9
+%define state2	r10
+
+%define mask	r11
+
+%define KeyR0	xmm0
+%define KeyR1	xmm1
+%define KeyR2	xmm2
+%define Key20R1	xmm3
+%define Key20R2	xmm4
+
+%macro	mulr	0
 	; we use rcx:rbx as 128bit carry register
 
 	; carry <- limb0 = state0*r0 + 20*state1*r2 + 20*state2*r1
-	mov	rax, state0
-	mul	KeyR0
+	movq	rax, KeyR0
+	mul	state0
 	mov	rbx, rax
 	mov	rcx, rdx
 
-	mov	rax, state1
-	mul	Key20R2
+	movq	rax, Key20R2
+	mul	state1
 	add	rbx, rax
 	adc	rcx, rdx
 
-	mov	rax, state2
-	mul	Key20R1
+	movq	rax, Key20R1
+	mul	state2
 	add	rbx, rax
 	adc	rcx, rdx
 
 	; save 44 lower bits of limb0 on stack
 	mov	rax, rbx
-	and	rax, rbp
+	and	rax, mask
 	push	rax
 
 	; carry >>= 44
@@ -95,24 +84,26 @@ endstruc
 
 
 	; carry <- limb1 = carry + state0*r1 + state1*r0 + 20*state2*r2
-	mov	rax, state0
-	mul	KeyR1
+	movq	rax, KeyR1
+	mul	state0
 	add	rbx, rax
 	adc	rcx, rdx
 
-	mov	rax, state1
-	mul	KeyR0
+	movq	rax, KeyR0
+	mul	state1
 	add	rbx, rax
 	adc	rcx, rdx
 
-	mov	rax, state2
-	mul	Key20R2
+	movq	rax, Key20R2
+	mul	state2
+
+
 	add	rbx, rax
 	adc	rcx, rdx
 
 	; store lower 44 bit of limb1 onto stack
 	mov	rax, rbx
-	and	rax, rbp
+	and	rax, mask
 	push	rax
 
 	; carry >>= 44
@@ -124,24 +115,24 @@ endstruc
 
 
 	; carry <- limb2 = carry + state0*r2 + state1*r1 + state2*r0
-	mov	rax, state0
-	mul	KeyR2
+	movq	rax, KeyR2
+	mul	state0
 	add	rbx, rax
 	adc	rcx, rdx
 
-	mov	rax, state1
-	mul	KeyR1
+	movq	rax, KeyR1
+	mul	state1
 	add	rbx, rax
 	adc	rcx, rdx
 
-	mov	rax, state2
-	mul	KeyR0
+	movq	rax, KeyR0
+	mul	state2
 	add	rbx, rax
 	adc	rcx, rdx
 
 	; state2 <- lower 42 bits of carry
 	mov	state2, rbx
-	mov	rax, rbp
+	mov	rax, mask
 	shr	rax, 2
 	and	state2, rax
 	pop	state1
@@ -154,49 +145,53 @@ endstruc
 	add	state0, rbx
 	shl	rbx, 2
 	add	state0, rbx
-
-	pop	rdx
 %endmacro
 
+
+
+
+
+section	.text
 
 
 ;; Input:
 ;;	RDI	context
 ;;	RSI	r
 ;;
+	align	16
 	global	poly1305_init
 poly1305_init:
 	cld
 
-	mov	r10, 0xfffffffffff
-
+	mov	mask, 0xfffffffffff
 
 	; rax <- clamped lower 64 bit of r
 	lodsq
-	mov	r11, 0x0ffffffc0fffffff
-	and	rax, r11
+	mov	rcx, 0x0ffffffc0fffffff
+	and	rax, rcx
 
 	; context.KeyR0 <- bits [0,44) of r
-	mov	r8, rax
-	and	r8, r10
-	mov	[rdi + context.KeyR0], r8
+	mov	rdx, rax
+	and	rdx, mask
+	mov	[rdi + context.KeyR0], rdx
 
 	; r8 <- unused 20 bits of lower part of r
-	mov	r8, rax
-	shr	r8, 44
+	mov	rdx, rax
+	shr	rdx, 44
 
 
 	; rax <- clamped upper 64 bits of r
 	lodsq
-	mov	r11, 0x0ffffffc0ffffffc
-	and	rax, r11
+	;mov	rcx, 0x0ffffffc0ffffffc
+	sub	rcx, 3
+	and	rax, rcx
 
 	; context.KeyR1 <- bits [44,88) of r
-	mov	r9, rax
-	shl	r9, 20
-	or	r8, r9
-	and	r8, r10
-	mov	[rdi + context.KeyR1], r8
+	mov	rcx, rax
+	shl	rcx, 20
+	or	rdx, rcx
+	and	rdx, mask
+	mov	[rdi + context.KeyR1], rdx
 
 	; context.KeyR2 <- bits [88,128) of r
 	shr	rax, 24
@@ -211,10 +206,10 @@ poly1305_init:
 	mov	[rdi + context.Key20R2], rax
 
 	; context.Key20R1 <- 20*KeyR1
-	shl	r8, 2
-	mov	rax, r8
-	shl	r8, 2
-	add	rax, r8
+	shl	rdx, 2
+	mov	rax, rdx
+	shl	rdx, 2
+	add	rax, rdx
 	mov	[rdi + context.Key20R1], rax
 
 
@@ -234,107 +229,110 @@ poly1305_init:
 ;;	RSI	data
 ;;	RDX	len
 ;;
+
+%define left	r12
+
+	align	16
 	global	poly1305_update
 poly1305_update:
 	push	rbp
 	push	rbx
-	push	r12
-	push	r13
-	push	r14
-	push	r15
+	push	left
 
 	cld
 
+	; rbp <- context address
+	mov	rbp, rdi
+
+	; left <- data length
+	mov	left, rdx
+
 	; load state
-	mov	state0, [rdi + context.state0]
-	mov	state1, [rdi + context.state1]
-	mov	state2, [rdi + context.state2]
+	mov	state0, [rbp + context.state0]
+	mov	state1, [rbp + context.state1]
+	mov	state2, [rbp + context.state2]
 
 	; load key
-	mov	KeyR0, [rdi + context.KeyR0]
-	mov	KeyR1, [rdi + context.KeyR1]
-	mov	KeyR2, [rdi + context.KeyR2]
-	mov	Key20R1, [rdi + context.Key20R1]
-	mov	Key20R2, [rdi + context.Key20R2]
+	movq	KeyR0, [rbp + context.KeyR0]
+	movq	KeyR1, [rbp + context.KeyR1]
+	movq	KeyR2, [rbp + context.KeyR2]
+	movq	Key20R1, [rbp + context.Key20R1]
+	movq	Key20R2, [rbp + context.Key20R2]
 
-	; 44bit mask
-	mov	rbp, 0xfffffffffff
+	; mask <- 44bit mask
+	mov	mask, 0xfffffffffff
 
 
 	; do we have data in internal buffer?
-	mov	rcx, [rdi + context.fill]
+	mov	rcx, [rbp + context.fill]
 	or	rcx, rcx
-	je	update_reload_data
+	je	.reload_data
 
 	;
 	; fill up internal buffer
 	;
 
-	; rbp <- current buffer position
-	lea	rbp, [rdi + context.buffer + rcx]
+	; rdi <- current buffer position
+	lea	rdi, [rdi + context.buffer + rcx]
 
 	; rcx <- needed bytes = 16 - rcx
 	neg	rcx
 	add	rcx, 16
 
 	; we need rcx bytes, do we have that much?
-	cmp	rcx, rdx
-	jbe	update_fillup
+	cmp	rcx, left
+	jbe	.fillup
 
 	; copy what we have and go home...
-	add	[rdi + context.fill], rdx
-	mov	rdi, rbp
-	mov	rcx, rdx
+	add	[rbp + context.fill], left
+	mov	rcx, left
 	rep	movsb
-	jmp	update_return
+	jmp	.return
 
 
-update_fillup:
-	sub	rdx, rcx
-
-	xchg	rdi, rbp
+.fillup:
+	sub	left, rcx
 	rep	movsb
-	mov	rdi, rbp
 
+	;
 	; add data from internal buffer to state
-	mov	rbp, 0xfffffffffff
-
-	mov	rax, [rdi + context.buffer]
+	;
+	mov	rax, [rbp + context.buffer]
 	mov	rbx, rax
-	and	rax, rbp
+	and	rax, mask
 	add	state0, rax
 
-	mov	rax, [rdi + context.buffer + 8]
+	mov	rax, [rbp + context.buffer + 8]
 	mov	rcx, rax
 	shl	rax, 20
 	shr	rbx, 44
 	or	rax, rbx
-	and	rax, rbp
+	and	rax, mask
 	add	state1, rax
 
 	shr	rcx, 24
 	add	state2, rcx
 
-
-update_mul_r:
+	align	16
+.mulr:
 	; add 2^128 padding to state
-	;xor	rcx, rcx
-	;inc	rcx
-	;shl	rcx, 40
 	mov	rcx, 0x10000000000
 	add	state2, rcx
 
+	; multiplicate with secret r
 	mulr
 
-update_reload_data:
-	cmp	rdx, 16
-	jb	update_final
+.reload_data:
+	cmp	left, 16
+	jb	.done
+
+	prefetchnta	[rsi+128]
 
 
 	; load next data and add it to state
 	lodsq
 	mov	rbx, rax
-	and	rax, rbp
+	and	rax, mask
 	add	state0, rax
 
 	lodsq
@@ -342,59 +340,55 @@ update_reload_data:
 	shl	rax, 20
 	shr	rbx, 44
 	or	rax, rbx
-	and	rax, rbp
+	and	rax, mask
 	add	state1, rax
 
 	shr	rcx, 24
 	add	state2, rcx
 
-	sub	rdx, 16
-	jmp	update_mul_r
+	sub	left, 16
+	jmp	.mulr
 
 
-update_final:
+.done:
 	; write state to context
-	mov	[rdi + context.state0], state0
-	mov	[rdi + context.state1], state1
-	mov	[rdi + context.state2], state2
+	mov	[rbp + context.state0], state0
+	mov	[rbp + context.state1], state1
+	mov	[rbp + context.state2], state2
 
 	; save remaining data to internal buffer
-	mov	[rdi + context.fill], rdx
-	add	rdi, context.buffer
-	mov	rcx, rdx
+	lea	rdi, [rbp + context.buffer]
+	mov	rcx, left
 	rep	movsb
+	mov	[rbp + context.fill], left
 
-update_return:
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
+.return:
+	pop	left
 	pop	rbx
 	pop	rbp
-
 	ret
 
 ;
 ; carry_reduce - performs one carry-reduce round for state
 ;
 ; assumes:
-;	rcx = 2^45-1 = 0xfffffffffff
-;	r11 = 2^43-1 = 0x3ffffffffff
+;	mask = 2^45-1 = 0xfffffffffff
+;	rcx = 2^43-1 = 0x3ffffffffff
 ;
 %macro carry_reduce	0
 	mov	rax, state0
 	shr	rax, 44
-	and	state0, rcx
+	and	state0, mask
 
 	add	state1, rax
 	mov	rax, state1
 	shr	rax, 44
-	and	state1, rcx
+	and	state1, mask
 
 	add	state2, rax
 	mov	rax, state2
 	shr	rax, 42
-	and	state2, r11
+	and	state2, rcx
 
 	; state0 += 5*rax
 	add	state0, rax
@@ -410,6 +404,7 @@ update_return:
 ;;	RSI	encno
 ;;	RDX	mac
 ;;
+	align	16
 	global	poly1305_mac
 poly1305_mac:
 	cld
@@ -419,26 +414,32 @@ poly1305_mac:
 	mov	state1, [rdi + context.state1]
 	mov	state2, [rdi + context.state2]
 
+	; 44bit mask
+	mov	mask, 0xfffffffffff
+
+
 	; do we have data left in internal buffer?
 	mov	rcx, [rdi + context.fill]
 	or	rcx, rcx
-	jz	mac_finalize
+	jz	.finalize
 
 	;
 	; handle internal buffer
 	;
 	push	rbp
 	push	rbx
-	push	r12
-	push	r13
-	push	r14
-	push	r15
+	push	rdx
 
-	lea	rbp, [rdi + context.buffer + rcx]
 
-	; padding
-	mov	byte [rbp], 1
-	inc	rbp
+	; rbp <- context address
+	mov	rbp, rdi
+
+	; rdi <- end of data in internal buffer
+	lea	rdi, [rbp + context.buffer + rcx]
+
+	; add padding
+	mov	byte [rdi], 1
+	inc	rdi
 
 	; rcx <- unused bytes in buffer = 16 - rcx - 1
 	neg	rcx
@@ -446,54 +447,46 @@ poly1305_mac:
 
 	; zero unsed buffer space
 	xor	al, al
-	xchg	rdi, rbp
 	rep	stosb
-	mov	rdi, rbp
 
 
 	; add data from internal buffer to state
-	mov	rbp, 0xfffffffffff
-
-	mov	rax, [rdi + context.buffer]
+	mov	rax, [rbp + context.buffer]
 	mov	rbx, rax
-	and	rax, rbp
+	and	rax, mask
 	add	state0, rax
 
-	mov	rax, [rdi + context.buffer + 8]
+	mov	rax, [rbp + context.buffer + 8]
 	mov	rcx, rax
 	shl	rax, 20
 	shr	rbx, 44
 	or	rax, rbx
-	and	rax, rbp
+	and	rax, mask
 	add	state1, rax
 
 	shr	rcx, 24
 	add	state2, rcx
 
 	; load key
-	mov	KeyR0, [rdi + context.KeyR0]
-	mov	KeyR1, [rdi + context.KeyR1]
-	mov	KeyR2, [rdi + context.KeyR2]
-	mov	Key20R1, [rdi + context.Key20R1]
-	mov	Key20R2, [rdi + context.Key20R2]
+	movq	KeyR0, [rbp + context.KeyR0]
+	movq	KeyR1, [rbp + context.KeyR1]
+	movq	KeyR2, [rbp + context.KeyR2]
+	movq	Key20R1, [rbp + context.Key20R1]
+	movq	Key20R2, [rbp + context.Key20R2]
 
 	mulr
 
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
+	pop	rdx
 	pop	rbx
 	pop	rbp
 
 
-mac_finalize:
+.finalize:
 	;
 	; completly reduce state
 	;
-	mov	rcx, 0xfffffffffff
-	mov	r11, rcx
-	shr	r11, 2
+	mov	rcx, mask
+	shr	rcx, 2
 
 	add	state0, 5
 	carry_reduce
@@ -524,5 +517,4 @@ mac_finalize:
 	;
 	mov	[rdx], state0
 	mov	[rdx + 8], state1
-
 	ret

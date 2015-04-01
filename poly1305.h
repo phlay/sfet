@@ -2,6 +2,7 @@
 #define POLY1305
 
 #include <stdint.h>
+#include <stddef.h>
 
 
 #ifdef __LP64__

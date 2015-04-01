@@ -269,9 +269,10 @@ horner1305(struct poly1305 *ctx, const uint8_t data[16], uint8_t bit128)
 static inline void
 add128(uint8_t out[16], const uint8_t a[16], const uint8_t b[16])
 {
+	int i;
 	int foo = 0;
 
-	for (int i = 0; i < 16; i++) {
+	for (i = 0; i < 16; i++) {
 		foo += a[i] + b[i];
 		out[i] = foo & 0xff;
 		foo >>= 8;
@@ -283,8 +284,8 @@ add128(uint8_t out[16], const uint8_t a[16], const uint8_t b[16])
 void
 poly1305_init(struct poly1305 *ctx, const uint8_t r[16])
 {
-#if 1
 	uint8_t prepr[16];
+	int i;
 
 	/* prepare r */
 	memcpy(prepr, r, 16);
@@ -296,21 +297,18 @@ poly1305_init(struct poly1305 *ctx, const uint8_t r[16])
 	prepr[12] &= 0xfc;
 	prepr[15] &= 0xf;
 	import1305(ctx->r, prepr, 0);
-#else
-	import1305(ctx->r, r, 0);
-#endif
 
 
 #ifdef __LP64__
-	for (int i = 0; i < LIMB_NUM-1; i++)
+	for (i = 0; i < LIMB_NUM-1; i++)
 		ctx->sr[i] = 20*ctx->r[i+1];
 #else
-	for (int i = 0; i < LIMB_NUM-1; i++)
+	for (i = 0; i < LIMB_NUM-1; i++)
 		ctx->sr[i] = 5*ctx->r[i+1];
 #endif
 
 	/* init state */
-	for (int i = 0; i < LIMB_NUM; i++)
+	for (i = 0; i < LIMB_NUM; i++)
 		ctx->state[i] = 0;
 
 	ctx->fill = 0;
@@ -348,11 +346,12 @@ void
 poly1305_mac(struct poly1305 *ctx, const uint8_t encno[16], uint8_t mac[16])
 {
 	uint8_t pack[16];
+	int i;
 
 	if (ctx->fill > 0) {
 		/* pad buffer */
 		ctx->buffer[ctx->fill++] = 1;
-		for (int i = ctx->fill; i < 16; i++)
+		for (i = ctx->fill; i < 16; i++)
 			ctx->buffer[i] = 0;
 
 		horner1305(ctx, ctx->buffer, 0);

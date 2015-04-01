@@ -33,24 +33,9 @@ poly1305aes_authenticate(uint8_t out[16],
 
 	aes(encno, kr, nonce);
 
-	poly1305_init(&ctx, kr+16);
+	poly1305_init(&ctx, kr+16, encno);
 	poly1305_update(&ctx, msg, len);
-	poly1305_mac(&ctx, encno, out);
-}
-
-static inline bool
-poly1305aes_verify(const uint8_t mac[16],
-		   const uint8_t kr[32],
-		   const uint8_t nonce[16],
-		   const uint8_t *msg,
-		   size_t len)
-{
-	uint8_t check[16];
-
-	poly1305aes_authenticate(check, kr, nonce, msg, len);
-
-	/* unsecure compare! */
-	return memcmp(check, mac, 16) == 0;
+	poly1305_mac(&ctx, out);
 }
 
 
@@ -75,24 +60,8 @@ int main()
 
 			for (i = 0;i < 16;++i) printf("%02x",(unsigned int) out[i]);
 			printf("\n");
-
-			if (!poly1305aes_verify(out,kr,n,m,len)) {
-				printf("poly1305aes_verify failed\n");
-				return 1;
-			}
-
 			x = random() & 15;
 			y = 1 + (random() % 255);
-
-#if 0
-			out[x] += y;
-			if (poly1305aes_verify(out,kr,n,m,len)) {
-				printf("poly1305aes_verify succeeded on bad input\n");
-				return 1;
-			}
-			out[x] -= y;
-#endif
-
 			if (len >= MAXLEN)
 				break;
 

@@ -18,6 +18,8 @@ struc	context
 	.Key20R1	resq	1
 	.Key20R2	resq	1
 
+	.secret		resb	16
+
 	.buffer		resb	17
 	.fill		resq	1
 endstruc
@@ -44,11 +46,11 @@ endstruc
 
 %define mask	r11
 
-%define KeyR0	xmm0
-%define KeyR1	xmm1
-%define KeyR2	xmm2
-%define Key20R1	xmm3
-%define Key20R2	xmm4
+%define KeyR0	xmm3
+%define KeyR1	xmm4
+%define KeyR2	xmm5
+%define Key20R1	xmm6
+%define Key20R2	xmm7
 
 %macro	mulr	0
 	; we use rcx:rbx as 128bit carry register
@@ -157,11 +159,17 @@ section	.text
 ;; Input:
 ;;	RDI	context
 ;;	RSI	r
+;;	RDX	s
 ;;
 	align	16
 	global	poly1305_init
 poly1305_init:
 	cld
+
+	; copy secret
+	movdqu	xmm0, [rdx]
+	movdqu	[rdi + context.secret], xmm0
+
 
 	mov	mask, 0xfffffffffff
 
@@ -175,7 +183,7 @@ poly1305_init:
 	and	rdx, mask
 	mov	[rdi + context.KeyR0], rdx
 
-	; r8 <- unused 20 bits of lower part of r
+	; rdx <- unused 20 bits of lower part of r
 	mov	rdx, rax
 	shr	rdx, 44
 
@@ -327,23 +335,24 @@ poly1305_update:
 	jb	.done
 
 	prefetchnta	[rsi+128]
+	
+	; load next data
+	movdqu	xmm0, [rsi]
+	add	rsi, 16
 
+	movq	rax, xmm0
+	psrldq	xmm0, 5
+	movq	rbx, xmm0
+	psrldq	xmm0, 6
+	movq	rcx, xmm0
 
-	; load next data and add it to state
-	lodsq
-	mov	rbx, rax
+	shr	rbx, 4
 	and	rax, mask
+	and	rbx, mask
+
+	; add to state
 	add	state0, rax
-
-	lodsq
-	mov	rcx, rax
-	shl	rax, 20
-	shr	rbx, 44
-	or	rax, rbx
-	and	rax, mask
-	add	state1, rax
-
-	shr	rcx, 24
+	add	state1, rbx
 	add	state2, rcx
 
 	sub	left, 16
@@ -401,38 +410,37 @@ poly1305_update:
 
 ;; Input:
 ;;	RDI	context
-;;	RSI	encno
-;;	RDX	mac
+;;	RSI	mac
 ;;
 	align	16
 	global	poly1305_mac
 poly1305_mac:
+	push	rbp
 	cld
 
+	; rbp <- context address
+	mov	rbp, rdi
+
 	; load state
-	mov	state0, [rdi + context.state0]
-	mov	state1, [rdi + context.state1]
-	mov	state2, [rdi + context.state2]
+	mov	state0, [rbp + context.state0]
+	mov	state1, [rbp + context.state1]
+	mov	state2, [rbp + context.state2]
 
 	; 44bit mask
 	mov	mask, 0xfffffffffff
 
 
 	; do we have data left in internal buffer?
-	mov	rcx, [rdi + context.fill]
+	mov	rcx, [rbp + context.fill]
 	or	rcx, rcx
 	jz	.finalize
 
 	;
 	; handle internal buffer
 	;
-	push	rbp
 	push	rbx
 	push	rdx
 
-
-	; rbp <- context address
-	mov	rbp, rdi
 
 	; rdi <- end of data in internal buffer
 	lea	rdi, [rbp + context.buffer + rcx]
@@ -478,7 +486,6 @@ poly1305_mac:
 
 	pop	rdx
 	pop	rbx
-	pop	rbp
 
 
 .finalize:
@@ -507,14 +514,14 @@ poly1305_mac:
 	;
 	; add encrypted nonce to state
 	;
-	lodsq
-	add	state0, rax
-	lodsq
-	adc	state1, rax
+	add	state0, qword [rbp + context.secret]
+	adc	state1, qword [rbp + context.secret + 8]
 
 	;
 	; export final poly1305 mac
 	;
-	mov	[rdx], state0
-	mov	[rdx + 8], state1
+	mov	[rsi], state0
+	mov	[rsi + 8], state1
+
+	pop	rbp
 	ret

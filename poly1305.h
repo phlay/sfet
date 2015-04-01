@@ -36,14 +36,16 @@ struct poly1305 {
 
 	limb_t		sr[LIMB_NUM-1];
 
+	uint8_t		secret[16];
+
 	uint8_t		buffer[17];
 	int		fill;
 };
 
 
-void	poly1305_init(struct poly1305 *ctx, const uint8_t r[16]);
+void	poly1305_init(struct poly1305 *ctx, const uint8_t r[16], const uint8_t s[16]);
 void	poly1305_update(struct poly1305 *ctx, const uint8_t *data, size_t len);
-void	poly1305_mac(struct poly1305 *ctx, const uint8_t encno[16], uint8_t mac[16]);
+void	poly1305_mac(struct poly1305 *ctx, uint8_t mac[16]);
 
 
 #endif

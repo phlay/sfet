@@ -25,7 +25,6 @@
 
 #include <err.h>
 
-#include "defaults.h"
 #include "utils.h"
 
 

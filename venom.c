@@ -18,7 +18,6 @@
 #include "pbkdf2-hmac-sha512.h"
 #include "poly1305-serpent.h"
 #include "ctr-serpent.h"
-#include "defaults.h"
 
 
 #define ITERATIONS	256000

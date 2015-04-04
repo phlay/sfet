@@ -36,7 +36,7 @@ endif
 
 all: venom
 
-${OBJ}: defaults.h config.mk
+${OBJ}: config.mk
 
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<

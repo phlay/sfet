@@ -12,17 +12,15 @@ OBJ_SHA512 = test-sha512.o sha512.o
 OBJ_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
 OBJ_SERPENT = test-serpent.o serpent.o
 OBJ_SERPENT_AVX = test-serpent8x.o serpent.o serpent8x-avx.o
-OBJ_EAX_SERPENT = test-eax-serpent.o eax-serpent.o omac-serpent.o serpent.o
 OBJ_POLY1305 = test-poly1305.o printvec.o
 
 
-TESTS = sha512 pbkdf2 serpent eax-serpent poly1305
+TESTS = sha512 pbkdf2 serpent poly1305
 
 ifeq "$(USE_ASM_X86_64)" "yes"
 	CFLAGS += -DUSE_ASM_X86_64
 
 	OBJ_SERPENT += serpent-x86-64.o
-	OBJ_EAX_SERPENT += serpent-x86-64.o
 	OBJ_POLY1305 += poly1305-x86-64.o
 else
 	OBJ_POLY1305 += poly1305.o
@@ -30,8 +28,6 @@ endif
 
 ifeq "$(USE_ASM_AVX)" "yes"
 	CFLAGS += -DUSE_ASM_AVX
-
-	OBJ_EAX_SERPENT += serpent8x-avx.o
 
 	TESTS += serpent-avx
 endif
@@ -65,14 +61,6 @@ serpent-avx: test-serpent-avx
 	@echo "Testing serpent-avx..."
 	@./test-serpent-avx
 
-eax-serpent: test-eax-serpent
-	@echo "Testing eax-serpent..."
-	@./test-eax-serpent
-
-eax-serpent-avx: test-eax-serpent-avx
-	@echo "Testing eax-serpent-avx..."
-	@./test-eax-serpent-avx
-
 poly1305: test-poly1305
 	@echo "Testing poly1305..."
 	@./test-poly1305
@@ -99,9 +87,6 @@ test-serpent8x.o: test-serpent8x.c serpent128-table.h serpent256-table.h
 test-serpent.o: test-serpent.c serpent128-table.h serpent256-table.h
 	$(CC) -c $(CFLAGS) -o $@ $<
 
-test-eax-serpent.o: test-eax-serpent.c eax-serpent-table.h
-	$(CC) -c $(CFLAGS) -o $@ $<
-
 test-poly1305.o: test-poly1305.c poly1305-table.h
 	$(CC) -c $(CFLAGS) -o $@ $<
 
@@ -119,9 +104,6 @@ test-serpent: $(OBJ_SERPENT)
 
 test-serpent-avx: $(OBJ_SERPENT_AVX)
 	$(CC) $(LDFLAGS) $(OBJ_SERPENT_AVX) -o $@
-
-test-eax-serpent: $(OBJ_EAX_SERPENT)
-	$(CC) $(LDFLAGS) $(OBJ_EAX_SERPENT) -o $@
 
 test-poly1305: $(OBJ_POLY1305)
 	$(CC) $(LDFLAGS) $(OBJ_POLY1305) -o $@

@@ -11,7 +11,7 @@ AS = nasm
 ASFLAGS = -Ox -f elf64
 
 
-OBJ = utils.o serpent.o omac-serpent.o eax-serpent.o sha512.o pbkdf2-hmac-sha512.o readpass.o venom.o
+OBJ = utils.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o readpass.o venom.o
 
 ifeq ($(HAVE_GETRANDOM), yes)
 	CFLAGS += -DHAVE_GETRANDOM
@@ -19,7 +19,9 @@ endif
 
 ifeq ($(USE_ASM_X86_64), yes)
 	CFLAGS += -DUSE_ASM_X86_64
-	OBJ += serpent-x86-64.o
+	OBJ += serpent-x86-64.o poly1305-x86-64.o
+else
+	OBJ += poly1305.o
 endif
 
 ifeq ($(USE_ASM_AVX), yes)

@@ -1,55 +1,69 @@
-/* main program for venom file encryption
- *
- * Written by Philipp Lay <philipp.lay@illunis.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- */
-
-
 #define _FILE_OFFSET_BITS	64
 
+#include <sys/stat.h>
 
-#include <inttypes.h>
 #include <stdint.h>
-#include <limits.h>
-#include <endian.h>
+#include <stdbool.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <fcntl.h>
-
-#include <errno.h>
+#include <unistd.h>
+#include <limits.h>
+#include <endian.h>
 #include <err.h>
 
+#include "utils.h"
+#include "readpass.h"
+#include "pbkdf2-hmac-sha512.h"
+#include "poly1305-serpent.h"
+#include "ctr-serpent.h"
 #include "defaults.h"
 
-#include "utils.h"
-#include "eax-serpent.h"
-#include "pbkdf2-hmac-sha512.h"
-#include "readpass.h"
 
+#define ITERATIONS	256000
+#define PASSWD_SRC	"/dev/tty"
+
+#define MODE_ENC	(S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH)
+#define MODE_DEC	(S_IRUSR|S_IWUSR)
 
 #define VERSION		"pre3.0-0"
 #define FILEVER		7
 #define PASSLEN		512
+#define CHUNKLEN	(32*1024*1024)
 
 
-struct keyparam {
-	uint8_t		passwd[PASSLEN];
-	uint8_t		nonce[DEF_NONCELEN];
-	uint64_t	iter;
-	uint8_t		pwcheck[4];
+struct venom {
+	struct ctr_serpent		ctr;
+	struct poly1305_serpent		mac;
+
+	uint8_t				nonce[16];
+};
+
+
+struct config {
+	int		 verbose;
+	int		 force;
+
+	uint64_t	 iterations;
+	uint64_t	 chunklen;
+	char		*passfn;	/* XXX const char? */
+	int		 filemode;
 };
 
 
 
-/* printhex - simple function to print binary arrays in hex.
- */
-static void
+struct header {
+	char	 magic[5];
+	uint16_t version;
+	uint64_t iter;
+	uint8_t	 nonce[16];
+	uint64_t chunklen;
+} __attribute__((packed));
+
+
+
+void
 printhex(const char *label, const uint8_t *vec, size_t n)
 {
 	int i;
@@ -65,265 +79,6 @@ printhex(const char *label, const uint8_t *vec, size_t n)
 }
 
 
-
-
-int
-read_header(FILE *in, struct keyparam *kp)
-{
-	uint8_t magic[5];
-	uint16_t version;
-	uint64_t iter;
-	size_t n;
-
-	/* is this really a file from us? */
-	n = fread(magic, sizeof(magic), 1, in);
-	if (n != 1) {
-		warnx("can't read magic");
-		return -1;
-	}
-	if (memcmp(magic, "VENOM", 5) != 0) {
-		warnx("not a venom encrypted file");
-		return -1;
-	}
-
-
-	/* check version */
-	n = fread(&version, sizeof(version), 1, in);
-	if (n != 1) {
-		warnx("can't read version from file");
-		return -1;
-	}
-	if (be16toh(version) != FILEVER) {
-		warnx("wrong file version %d (need %d)",
-		      be16toh(version), FILEVER);
-		return -1;
-	}
-
-	/* read iteration counter for pbkdf2 */
-	n = fread(&iter, sizeof(iter), 1, in);
-	if (n != 1) {
-		warnx("can't read pbkdf2 iteration number");
-		return -1;
-	}
-	kp->iter = be64toh(iter);
-
-
-	/* read nonce */
-	n = fread(kp->nonce, sizeof(kp->nonce), 1, in);
-	if (n != 1) {
-		warnx("can't read nonce");
-		return -1;
-	}
-
-	/* read pwcheck */
-	n = fread(kp->pwcheck, sizeof(kp->pwcheck), 1, in);
-	if (n != 1) {
-		warnx("can't read pwcheck");
-		return -1;
-	}
-
-	return 0;
-}
-
-
-int
-write_header(FILE *out, const struct keyparam *kp)
-{
-	uint16_t version = htobe16(FILEVER);
-	uint64_t iter = htobe64(kp->iter);
-	size_t n;
-
-	/* write header to output */
-	n = fwrite("VENOM", 5, 1, out);
-	if (n != 1) {
-		warn("error writing magic");
-		return -1;
-	}
-
-	n = fwrite(&version, sizeof(version), 1, out);
-	if (n != 1) {
-		warn("error writing file version");
-		return -1;
-	}
-
-	n = fwrite(&iter, sizeof(iter), 1, out);
-	if (n != 1) {
-		warn("error writing iteration count");
-		return -1;
-	}
-
-	n = fwrite(kp->nonce, sizeof(kp->nonce), 1, out);
-	if (n != 1) {
-		warn("error writing nonce");
-		return -1;
-	}
-
-	n = fwrite(kp->pwcheck, sizeof(kp->pwcheck), 1, out);
-	if (n != 1) {
-		warn("error writing password check");
-		return -1;
-	}
-
-	return 0;
-}
-
-
-
-
-int
-init_cipher(eax_serpent_t *C, struct keyparam *kp, int enc)
-{
-	uint8_t key[SERPENT_MAX_KEY_SIZE];
-	uint8_t N[DEF_NONCELEN];
-	uint8_t tag[16];
-
-	/*
-	 * we need three nonces
-	 *   1) pbkdf2 key setup
-	 *   2) hash for password check
-	 *   3) main encryption/decryption
-	 *
-	 * first nonce is taken directly from key parameters. after
-	 * that the first byte of the nonce is incremented, to get a new nonce.
-	 */
-
-	/* copy nonce */
-	memcpy(N, kp->nonce, DEF_NONCELEN);
-
-	/* derive encryption key and setup eax-serpent cipher */
-	pbkdf2_hmac_sha512(key, sizeof(key), kp->passwd, PASSLEN,
-			N, DEF_NONCELEN, kp->iter);
-
-	eax_serpent_init(C, key, sizeof(key));
-
-
-	/* next nonce for password check */
-	N[0]++;
-	eax_serpent_nonce(C, N, DEF_NONCELEN);
-
-	/* now hash magic and (original) nonce for password check */
-	eax_serpent_header(C, (uint8_t*)"VENOM", 5);
-	eax_serpent_header(C, kp->nonce, DEF_NONCELEN);
-	eax_serpent_tag(C, tag);
-
-	/* install next nonce to make cipher ready to encrypt/decrypt */
-	N[0]++;
-	eax_serpent_nonce(C, N, DEF_NONCELEN);
-
-
-	if (enc)
-		memcpy(kp->pwcheck, tag, 4);
-	else if (memcmp(tag, kp->pwcheck, 4) != 0)
-		return -1;
-
-	return 0;
-}
-
-
-
-int
-encrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
-{
-	uint8_t buffer[DEF_BUFSIZE];
-	uint8_t tag[16];
-	size_t n;
-
-	/* encryption loop */
-	do {
-		n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE, in);
-		eax_serpent_encrypt(C, buffer, buffer, n);
-
-		if (fwrite(buffer, sizeof(uint8_t), n, out) != n) {
-			warn("can't write to output file");
-			return -1;
-		}
-	} while (n == DEF_BUFSIZE);
-
-	if (ferror(in)) {
-		warn("can't read from input file");
-		return -1;
-	}
-
-	/* write final tag */
-	eax_serpent_tag(C, tag);
-	if (verbose > 0)
-		printhex("tag", tag, 16);
-
-	if (fwrite(tag, sizeof(uint8_t), 16, out) != 16) {
-		warn("can't write tag to output");
-		return -1;
-	}
-
-	return 0;
-}
-
-
-int
-decrypt_stream(FILE *in, FILE *out, eax_serpent_t *C, int verbose)
-{
-	uint8_t buffer[DEF_BUFSIZE+16];
-	uint8_t tag[16];
-	size_t n;
-
-	/* the decryption-loop is more complicated because we have
-	 * to look out for the final tag. we do that by maintaining a
-	 * tag-buffer behind our normal read buffer.
-	 */
-
-	n = fread(buffer, sizeof(uint8_t), DEF_BUFSIZE+16, in);
-	if (n < 16) {
-		if (ferror(in))
-			warn("can't read from input file");
-		else
-			warnx("input file is too short");
-
-		return -1;
-	}
-
-	/* subtract 16, because this could already be the final tag */
-	n -= 16;
-
-	/* main loop: buffer always holding n+16 bytes of data */
-	for (;;) {
-		eax_serpent_decrypt(C, buffer, buffer, n);
-		if (fwrite(buffer, sizeof(uint8_t), n, out) != n) {
-			warn("can't write to output file");
-			return -1;
-		}
-
-		/* copy tag-buffer to beginning */
-		memmove(buffer, buffer+n, 16);
-		if (n < DEF_BUFSIZE)
-			break;
-
-		/* we are not done: read next chunk of data behind the 16 byte
-		 * we still have in our buffer
-		 */
-		n = fread(buffer+16, sizeof(uint8_t), DEF_BUFSIZE, in);
-	}
-	if (ferror(in)) {
-		warn("can't read from input file");
-		return -1;
-	}
-
-	/* calculate and check eax-tag */
-	eax_serpent_tag(C, tag);
-	if (verbose > 0)
-		printhex("tag", tag, 16);
-
-	if (memcmp(tag, buffer, 16) != 0) {
-		warnx("mac check failed: encrypted file is corrupted!");
-		if (verbose > 0)
-			printhex("file tag", buffer+n, 16);
-
-		return -1;
-	}
-
-	return 0;
-}
-
-
-
 void
 printusage(FILE *fp)
 {
@@ -336,7 +91,7 @@ printusage(FILE *fp)
 	fprintf(fp, "  -s\t\tshow file metadata\n");
 	fprintf(fp, "  -v\t\tverbose\n");
 	fprintf(fp, "  -f\t\tforce\n");
-	fprintf(fp, "  -p <file>\tread password from <file> instead of %s\n", DEF_PASSWD_SRC);
+	fprintf(fp, "  -p <file>\tread password from <file> instead of %s\n", PASSWD_SRC);
 	fprintf(fp, "  -i <n>\tset pbkdf2 iteration number to <n>\n");
 	fprintf(fp, "  -m <mode>\tset file mode bits of output\n");
 }
@@ -359,67 +114,475 @@ printversion(FILE *fp)
 #endif
 }
 
-int
-main(int argc, char *argv[])
+
+
+void
+crypto_init(struct venom *ctx, const uint8_t passwd[PASSLEN],
+		const uint8_t nonce[16], uint64_t iter)
 {
-	char mode = 'd';
+	uint8_t key[32+32]; /* 32 serpent ctr + 32 poly1305-serpent */
 
-	int verbose = 0;
-	int force = 0;
+	pbkdf2_hmac_sha512(key, sizeof(key), passwd, PASSLEN, nonce, 16, iter);
 
-	char *inputfn = "-";
-	char *outputfn = "-";
-	char *passfn = DEF_PASSWD_SRC;
+	ctr_serpent_init(&ctx->ctr, key);
+	ctr_serpent_nonce(&ctx->ctr, nonce);
 
-	FILE *in, *out, *passfile;
+	poly1305_serpent_setkey(&ctx->mac, key+32);
 
-	char tmpoutfn[PATH_MAX];
-	long outmode = -1;
+	/* copy nonce for chunk macs */
+	memcpy(ctx->nonce, nonce, 16);
+}
 
-	struct keyparam keyparam;
-	eax_serpent_t cipher;
+
+void
+crypto_authdata(struct venom *ctx, const uint8_t *data, size_t len, uint8_t mac[16])
+{
+	int i;
+
+	poly1305_serpent_nonce(&ctx->mac, ctx->nonce);
+	poly1305_update(&ctx->mac.poly1305, data, len);
+	poly1305_mac(&ctx->mac.poly1305, mac);
+
+	/* advance mac nonce */
+	for (i = 15; i >= 0 && ++ctx->nonce[i] == 0; i--);
+}
+
+
+
+
+/*
+ * main functions
+ */
+
+int
+encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
+{
+	FILE *in = stdin;
+	FILE *out = stdout;
+
+	struct header header;
+	uint8_t *buffer;
+	size_t n;
+
+	uint8_t passwd[PASSLEN];
+	uint8_t random_nonce[16];
+
+	struct venom crypto;
 
 	int rc;
 
-	/* initialize keyparam structure */
-	keyparam.iter = DEF_ITERATION;
+
+	/* allocate chunk buffer */
+	buffer = malloc(conf->chunklen + 16);
+	if (buffer == NULL) {
+		warn("can't allocate memory");
+		return 1;
+	}
 
 
-	/*
-	 * parse arguments
+	/* open input file */
+	if (strcmp(inputfn, "-") != 0) {
+		in = fopen(inputfn, "r");
+		if (in == NULL) {
+			warn("%s: can't open input file", inputfn);
+			goto errout;
+		}
+	}
+
+
+	/* read password */
+	rc = read_pass_fn(conf->passfn, passwd, sizeof(passwd),
+			"Password: ", "Confirm: ");
+	if (rc == -1) 
+		goto errout;	/* read_pass_fn is verbose, no extra warning needed */
+
+	/* generate random nonce */
+	if (secrand(random_nonce, 16) == -1) {
+		warn("can't read random data");
+		goto errout;
+	}
+
+	/* initialize crypto */
+	if (conf->verbose > 1) {
+		fprintf(stderr, "iterations: %" PRIu64 "\n", conf->iterations);
+		printhex("nonce", random_nonce, 16);
+	}
+	crypto_init(&crypto, passwd, random_nonce, conf->iterations);
+
+
+	/* open output file */
+	if (strcmp(outputfn, "-") != 0) {
+		out = fopen(outputfn, conf->force ? "w" : "wx");
+		if (out == NULL) {
+			warn("%s: can't open output file", outputfn);
+			goto errout;
+		}
+	}
+
+
+	/* create header */
+	memcpy(header.magic, "VENOM", 5);
+	header.version = htobe16(FILEVER);
+	header.iter = htobe64(conf->iterations);
+	memcpy(header.nonce, random_nonce, 16);
+	header.chunklen = htobe64(conf->chunklen);
+	memcpy(buffer, &header, sizeof(struct header));
+
+	/* authenticate and write header */
+	crypto_authdata(&crypto, buffer, sizeof(struct header),
+			buffer+sizeof(struct header));
+	if (fwrite(buffer, sizeof(struct header)+16, 1, out) != 1) {
+		warn("%s: can't write to output file", outputfn);
+		goto errout;
+	}
+
+
+
+	/* encryption loop XXX way may not dectect an error in our input stream */
+	do {
+		n = fread(buffer, 1, conf->chunklen, in);
+
+		ctr_serpent_crypt(&crypto.ctr, buffer, buffer, n);
+		crypto_authdata(&crypto, buffer, n, buffer+n);
+
+		if (fwrite(buffer, 1, n+16, out) != n+16) {
+			warn("%s: can't write to output file", outputfn);
+			goto errout;
+		}
+	} while (n == conf->chunklen);
+
+
+	/* XXX overwrite buffer? */
+	free(buffer);
+
+	if (in != stdin)
+		fclose(in);
+	if (out != stdout)
+		fclose(out);
+
+	return 0;
+
+errout:
+	/* XXX overwrite buffer? */
+	free(buffer);
+	if (in != stdin)
+		fclose(in);
+	if (out != stdout)
+		fclose(out);
+	return 1;
+}
+
+
+int
+decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
+{
+	FILE *in = stdin;
+	FILE *out = stdout;
+	
+	struct header header;
+	uint8_t *buffer = NULL;
+	size_t n;
+	uint8_t mac[16], check[16];
+	uint64_t chunklen;
+
+	uint8_t passwd[PASSLEN];
+
+	struct venom crypto;
+
+	int rc;
+
+
+
+	/* open input file */
+	if (strcmp(inputfn, "-") != 0) {
+		in = fopen(inputfn, "r");
+		if (in == NULL) {
+			warn("%s: can't open input file", inputfn);
+			goto errout;
+		}
+	}
+	
+
+	/* read header */
+	n = fread(&header, sizeof(struct header), 1, in);
+	if (n != 1) {
+		if (feof(in))
+			warnx("%s: file too short, can't read header", inputfn);
+		else
+			warn("%s: can't read header", inputfn);
+		goto errout;
+	}
+
+	if (memcmp(header.magic, "VENOM", 5) != 0) {
+		warnx("%s: not a venom file", inputfn);
+		goto errout;
+	}
+	if (be16toh(header.version) != FILEVER) {
+		warnx("%s: unsupported file version: %u\n",
+				inputfn, be16toh(header.version));
+		goto errout;
+	}
+
+
+
+	/* read password */
+	rc = read_pass_fn(conf->passfn, passwd, sizeof(passwd), "Password: ", NULL);
+	if (rc == -1) 
+		goto errout;	/* read_pass_fn is verbose */
+
+
+	/* initialize cryptography */
+	crypto_init(&crypto, passwd, header.nonce, be64toh(header.iter));
+
+
+	/* read and check header mac */
+	if (fread(mac, 1, 16, in) != 16) {
+		if (feof(in))
+			warnx("%s: file too short, header mac missing", inputfn);
+		else
+			warn("%s: can't read header mac", inputfn);
+
+		goto errout;
+	}
+	crypto_authdata(&crypto, (uint8_t*)&header, sizeof(struct header), check);
+	if (!ctiseq(mac, check, 16)) {
+		warnx("%s: corrupt header or wrong password", inputfn);
+		goto errout;
+	}
+
+
+	/* read chunk length from header and allocate buffer acordingly */
+	chunklen = be64toh(header.chunklen);
+
+	/* allocate chunk buffer */
+	buffer = malloc(chunklen + 16);
+	if (buffer == NULL) {
+		warn("can't allocate memory");
+		return 1;
+	}
+
+
+	/* open output file */
+	if (strcmp(outputfn, "-") != 0) {
+		out = fopen(outputfn, conf->force ? "w" : "wx");
+		if (out == NULL) {
+			warn("%s: can't open output file", outputfn);
+			goto errout;
+		}
+	}
+
+	/* decryption loop */
+	do {
+		n = fread(buffer, 1, chunklen+16, in);
+		if (n < 16) {
+			if (feof(in))
+				warnx("%s: file too short, incomplete chunk", inputfn);
+			else
+				warn("%s: can't read from input file", inputfn);
+
+			goto errout;
+		}
+
+		/* set n to the data length in this chunk */
+		n -= 16;
+
+		crypto_authdata(&crypto, buffer, n, check);
+		if (!ctiseq(buffer+n, check, 16)) {
+			warnx("%s: corrupt chunk, abort decryption", inputfn);
+			goto errout;
+		}
+
+		ctr_serpent_crypt(&crypto.ctr, buffer, buffer, n);
+
+		if (fwrite(buffer, 1, n, out) != n) {
+			warn("%s: can't write to output file", outputfn);
+			goto errout;
+		}
+	} while (n == chunklen);
+	
+
+	/* XXX overwrite buffer? */
+	free(buffer);
+
+	if (in != stdin)
+		fclose(in);
+	if (out != stdout)
+		fclose(out);
+	return 0;
+
+errout:
+	if (in != stdin)
+		fclose(in);
+	if (out != stdout)
+		fclose(out);
+
+	/* XXX overwrite buffer? */
+	free(buffer);
+
+	/* XXX delete output file */
+
+	return 1;
+}
+
+int
+show(const char *inputfn, const struct config *conf)
+{
+	FILE *in = stdin;
+
+	struct header header;
+	uint8_t *buffer = NULL;
+	size_t n;
+
+
+	uint64_t chunklen;
+
+	uint8_t mac[16];
+
+	if (strcmp(inputfn, "-") != 0) {
+		in = fopen(inputfn, "r");
+		if (in == NULL)
+			err(1, "%s: can't open input file", inputfn);
+	}
+
+	/* read header */
+	n = fread(&header, sizeof(struct header), 1, in);
+	if (n != 1) {
+		if (feof(in))
+			warnx("%s: file too short, can't read header", inputfn);
+		else
+			warn("%s: can't read header", inputfn);
+		goto errout;
+	}
+
+	if (memcmp(header.magic, "VENOM", 5) != 0) {
+		warnx("%s: not a venom file", inputfn);
+		goto errout;
+	}
+
+
+	/* 
+	 * XXX this function should write to stdout
 	 */
 
+	fprintf(stderr, "venom file, version: %u\n", be16toh(header.version));
+
+	if (be16toh(header.version) != FILEVER) {
+		warnx("%s: unsupported file version: %u",
+			inputfn, be16toh(header.version));
+		goto errout;
+	}
+
+	chunklen = be64toh(header.chunklen);
+
+	/* show key param values */
+	fprintf(stderr, "iterations: %" PRIu64 "\n", be64toh(header.iter));
+	fprintf(stderr, "chunk length: %" PRIu64 "\n", chunklen);
+	printhex("nonce", header.nonce, 16);
+
+	if (fread(mac, 1, 16, in) != 16) {
+		if (feof(in))
+			warnx("%s: file too short, can't read header mac", inputfn);
+		else
+			warn("%s: can't read header mac", inputfn);
+		goto errout;
+	}
+
+	printhex("header mac", mac, 16);
+
+	if (conf->verbose > 0) {
+		buffer = malloc(chunklen+16);
+		if (buffer == NULL) {
+			warn("can't allocate memory");
+			goto errout;
+		}
+
+		do {
+
+			n = fread(buffer, 1, chunklen+16, in);
+			if (n < 16) {
+				if (feof(in))
+					warnx("%s: file too short, can't read chunk", inputfn);
+				else
+					warn("%s: error reading chunk", inputfn);
+				goto errout;
+			}
+
+			n -= 16;
+
+			printhex("chunk mac", buffer+n, 16);
+		} while (n == chunklen);
+	}
+
+
+	free(buffer);
+	if (in != stdin)
+		fclose(in);
+
+	return 0;
+
+errout:
+	free(buffer);
+	if (in != stdin)
+		fclose(in);
+
+	return 1;
+}
+
+
+int
+main(int argc, char *argv[])
+{
+	char *inputfn = "-";
+	char *outputfn = "-";
+
+	struct config conf;
+	char mode = 'd';
+	int rc;
+	int rval = 1;
+
+	/* set default config values */
+	conf.verbose = 0;
+	conf.force = 0;
+	conf.iterations = ITERATIONS;
+	conf.chunklen = CHUNKLEN;
+	conf.passfn = PASSWD_SRC;
+	conf.filemode = -1;
+
+
+	/* parse parameters */
 	while ((rc = getopt(argc, argv, "hVedsvfi:m:p:")) != -1) {
 		switch (rc) {
+
+		/* options */
+		case 'v':
+			conf.verbose++;
+			break;
+
+		case 'f':
+			conf.force = 1;
+			break;
+
+		case 'i':
+			conf.iterations = atoll(optarg);
+			break;
+
+		case 'p':
+			conf.passfn = optarg;
+			break;
+
+		case 'm':
+			conf.filemode = strtol(optarg, NULL, 8);
+			if (conf.filemode == LONG_MIN || conf.filemode == LONG_MAX)
+				errx(1, "illegal mode: %d", conf.filemode);
+			break;
+
+		/* main modes */
 		case 'h':
 			printusage(stdout);
 			exit(0);
 		case 'V':
 			printversion(stdout);
 			exit(0);
-
-		case 'v':
-			verbose++;
-			break;
-
-		case 'f':
-			force = 1;
-			break;
-
-		case 'i':
-			keyparam.iter = atoll(optarg);
-			break;
-
-		case 'p':
-			passfn = optarg;
-			break;
-
-		case 'm':
-			outmode = strtol(optarg, NULL, 8);
-			if (outmode == LONG_MIN || outmode == LONG_MAX)
-				errx(1, "illegal mode: %s", optarg);
-			break;
-
 
 		case 'e':
 		case 'd':
@@ -434,178 +597,46 @@ main(int argc, char *argv[])
 		}
 	}
 
-	/* check configuration parameters */
-	if (keyparam.iter < 1024)
-		errx(1, "illegal pkbdf2 iteration number: %" PRIu64, keyparam.iter);
-
-	if (outmode == -1) {
-		if (mode == 'e')
-			outmode = DEF_MODE_ENC;
-		else if (mode == 'd')
-			outmode = DEF_MODE_DEC;
-	}
-
-	if (mode == 0) {
-		printusage(stderr);
-		exit(1);
-	}
-
-	/* positional parameters are interpreted as input and output file */
 	argc -= optind;
 	argv += optind;
 
+
+	/* check parameter */
 	if (argc > 0)
 		inputfn = argv[0];
 	if (argc > 1)
 		outputfn = argv[1];
 
-	/*
-	 * open password source
-	 */
-	if (strcmp(passfn, "-") == 0)
-		passfile = stdin;
-	else {
-		passfile = fopen(passfn, "r");
-		if (passfile == NULL)
-			err(1, "can't open password source: %s", passfn);
-	}
+	if (conf.iterations < 1024)
+		errx(1, "illegal number of pbkdf2 iterations: %ld",
+				conf.iterations);
 
+	if (conf.chunklen < sizeof(struct header))
+		errx(1, "chunk size too small: %ld", conf.chunklen);
 
-	/* 
-	 * open input file 
-	 */
-	if (strcmp(inputfn, "-") == 0)
-		in = stdin;
-	else {
-		in = fopen(inputfn, "r");
-		if (in == NULL)
-			err(1, "%s: can't open input file", inputfn);
-	}
-
-	/* read & check header, if we expect an encrypted input */
-	if (mode != 'e') {
-		if (read_header(in, &keyparam) == -1) {
-			/* error reading input file? */
-			if (ferror(in))
-				err(1, "%s: can't read from file", inputfn);
-			exit(1);
-		}
-	}
-
-
-	/*
-	 * handle show-meta-data-mode (-s)
-	 */
-	if (mode == 's') {
-		uint8_t tag[16];
-
-		/* show key param values */
-		fprintf(stderr, "iterations: %" PRIu64 "\n", keyparam.iter);
-		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
-		printhex("pwcheck", keyparam.pwcheck, sizeof(keyparam.pwcheck));
-
-		/* seek file and show tag */
-		if (fseek(in, -16, SEEK_END) == -1)
-			err(1, "%s: can't seek file", inputfn);
-		if (fread(tag, sizeof(tag), 1, in) != 1)
-			err(1, "can't read tag");
-
-		printhex("tag", tag, 16);
-
-		return 0;
-	}
-
-
-	/* 
-	 * open output file
-	 */
-	if (strcmp(outputfn, "-") == 0)
-		out = stdout;
-	else {
-		if (!force && exists(outputfn))
+	/* early warning if output file already exists... */
+	if (strcmp(outputfn, "-") != 0) {
+		if (!conf.force && exists(outputfn))
 			errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
-
-		out = opentemp(tmpoutfn, outputfn, outmode);
-		if (out == NULL)
-			errx(1, "can't open temp file");
 	}
 
-	/* read password
-	 *
-	 * read_pass_tty returns the length of the password, but we ignore that
-	 * and use the feature that the password will be padded to fit in the
-	 * hole buffer. that way we could use the hole buffer as a fixed size
-	 * password.
-	 */
-
-	rc = read_pass(passfile, keyparam.passwd, sizeof(keyparam.passwd),
-			"Password: ", mode == 'e' ? "Confirm: " : NULL);
-	if (rc == -1)
-		exit(1);
-
-	fclose(passfile);
+	/* XXX lock memory */
 
 
-	/* generate nonce */
-	if (mode == 'e') {
-		rc = secrand(keyparam.nonce, sizeof(keyparam.nonce));
-		if (rc == -1)
-			errx(1, "can't read random");
-	}
-
-
-	/* display metadata if verbosity is at least 2 */
-	if (verbose > 1) {
-		fprintf(stderr, "iterations: %" PRIu64 "\n", keyparam.iter);
-		printhex("nonce", keyparam.nonce, DEF_NONCELEN);
-	}
-
-	/* init encryption */
-	if (init_cipher(&cipher, &keyparam, mode == 'e' ? 1 : 0) == -1)
-		errx(1, "wrong password");
-
-
-	/*
-	 * finally encrypt/decrypt
-	 */
+	/* now do our job */
 	switch (mode) {
 	case 'e':
-		rc = write_header(out, &keyparam);
-		if (rc == -1)
-			exit(1);
-		rc = encrypt_stream(in, out, &cipher, verbose);
-		if (rc == -1)
-			exit(1);
+		rval = encrypt(inputfn, outputfn, &conf);
 		break;
 	case 'd':
-		rc = decrypt_stream(in, out, &cipher, verbose);
-		if (rc == -1)
-			exit(1);
+		rval = decrypt(inputfn, outputfn, &conf);
 		break;
-	default:
-		errx(1, "oops, internal error");
+	case 's':
+		rval = show(inputfn, &conf);
+		break;
 	}
+		 
+	/* XXX cleanup stack */
 
-
-	/*
-	 * handle output file, if not stdout
-	 */
-	if (out != stdout) {
-		/* if using force, unlink outputfn */
-		if (force && exists(outputfn))
-			if (unlink(outputfn) == -1)
-				err(1, "%s: can't unlink destination", outputfn);
-
-		/* link anonymous temp-file into place */
-		rc = linkat(AT_FDCWD, tmpoutfn, AT_FDCWD, outputfn, AT_SYMLINK_FOLLOW);
-		if (rc == -1)
-			err(1, "%s: can't link output into place", tmpoutfn);
-	}
-
-
-	/* close files */
-	fclose(in);
-	fclose(out);
-
-	return 0;
+	return rval;
 }

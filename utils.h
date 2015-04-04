@@ -15,6 +15,6 @@ char	*x_strdup(const char *s);
 int	 exists(const char *path);
 
 int	 secrand(void *, size_t);
-FILE	*opentemp(char tmpfn[PATH_MAX], const char *target, int mode);
+int	 ctiseq(const void *s1, const void *s2, size_t n);
 
 #endif

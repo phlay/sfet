@@ -60,6 +60,7 @@ exists(const char *path)
 	return (stat(path, &sb) == -1) ? 0 : 1;
 }
 
+#if 0
 static int
 direxists(const char *dir)
 {
@@ -71,7 +72,7 @@ direxists(const char *dir)
 
         return S_ISDIR(sb.st_mode) ? 1 : 0;
 }
-
+#endif
 
 
 
@@ -120,12 +121,17 @@ secrand(void *buf, size_t len)
 	if (len > 256)
 		return -1;
 
+	/* try to read all random data without blocking */
 	n = getrandom(ptr, len, GRND_RANDOM|GRND_NONBLOCK);
 	if (n == -1)
 		return -1;
 	if (n == len)
 		return 0;
 
+	/*
+	 * we did'nt get everything on the first try... inform user
+	 * and read more random now WITH blocking
+	 */
 
 	fprintf(stderr, "waiting for random... ");
 	while (n < len) {
@@ -143,34 +149,15 @@ secrand(void *buf, size_t len)
 }
 
 
-
-FILE *
-opentemp(char tmpfn[PATH_MAX], const char *target, int mode)
+int
+ctiseq(const void *s1, const void *s2, size_t n)
 {
-	char path[PATH_MAX];
-	char *dir;
+	uint8_t *p1 = (uint8_t *)s1;
+	uint8_t *p2 = (uint8_t *)s2;
+	int mask = 0;
 
-	FILE *rval;
-	int fd;
-	int rc;
+	while (n-- > 0)
+		mask |= *p1++ ^ *p2++;
 
-	rc = snprintf(path, PATH_MAX, "%s", target);
-	if (rc >= PATH_MAX)
-		return NULL;
-
-	dir = dirname(path);
-	if (!direxists(dir))
-		return NULL;
-
-	fd = open(dir, O_TMPFILE | O_WRONLY, mode);
-	if (fd == -1)
-		return NULL;
-
-	rc = snprintf(tmpfn, PATH_MAX, "/proc/self/fd/%d", fd);
-	if (rc >= PATH_MAX)
-		return NULL;
-
-	rval = fdopen(fd, "w");
-
-	return rval;
+	return ((mask-1) >> 8) & 1;
 }

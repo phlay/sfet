@@ -144,3 +144,25 @@ errout:
 
 	return -1;
 }
+
+int
+read_pass_fn(const char *fn, uint8_t *passwd, size_t max, const char *promptA, const char *promptB)
+{
+	FILE *passfile;
+	int rval;
+
+	if (strcmp(fn, "-") == 0)
+		passfile = stdin;
+	else {
+		passfile = fopen(fn, "r");
+		if (passfile == NULL) {
+			warn("can't open password source: %s", fn);
+			return -1;
+		}
+	}
+
+	rval = read_pass(passfile, passwd, max, promptA, promptB);
+
+	fclose(passfile);
+	return rval;
+}

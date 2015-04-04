@@ -21,7 +21,7 @@ struc	context
 	.secret		resb	16
 
 	.buffer		resb	17
-	.fill		resq	1
+	.fill		resb	1
 endstruc
 
 
@@ -228,7 +228,7 @@ poly1305_init:
 	mov	[rdi + context.state2], rax
 
 	; context.fill <- 0
-	mov	[rdi + context.fill], rax
+	mov	[rdi + context.fill], al
 	ret
 
 
@@ -238,22 +238,20 @@ poly1305_init:
 ;;	RDX	len
 ;;
 
-%define left	r12
-
 	align	16
 	global	poly1305_update
 poly1305_update:
 	push	rbp
 	push	rbx
-	push	left
+	push	r12
 
 	cld
 
 	; rbp <- context address
 	mov	rbp, rdi
 
-	; left <- data length
-	mov	left, rdx
+	; r12 <- data length
+	mov	r12, rdx
 
 	; load state
 	mov	state0, [rbp + context.state0]
@@ -272,8 +270,8 @@ poly1305_update:
 
 
 	; do we have data in internal buffer?
-	mov	rcx, [rbp + context.fill]
-	or	rcx, rcx
+	movzx	rcx, byte [rbp + context.fill]
+	or	cl, cl
 	je	.reload_data
 
 	;
@@ -288,18 +286,18 @@ poly1305_update:
 	add	rcx, 16
 
 	; we need rcx bytes, do we have that much?
-	cmp	rcx, left
+	cmp	rcx, r12
 	jbe	.fillup
 
 	; copy what we have and go home...
-	add	[rbp + context.fill], left
-	mov	rcx, left
+	mov	rcx, r12
+	add	[rbp + context.fill], cl
 	rep	movsb
 	jmp	.return
 
 
 .fillup:
-	sub	left, rcx
+	sub	r12, rcx
 	rep	movsb
 
 	;
@@ -331,7 +329,7 @@ poly1305_update:
 	mulr
 
 .reload_data:
-	cmp	left, 16
+	cmp	r12, 16
 	jb	.done
 
 	prefetchnta	[rsi+128]
@@ -355,7 +353,7 @@ poly1305_update:
 	add	state1, rbx
 	add	state2, rcx
 
-	sub	left, 16
+	sub	r12, 16
 	jmp	.mulr
 
 
@@ -367,12 +365,12 @@ poly1305_update:
 
 	; save remaining data to internal buffer
 	lea	rdi, [rbp + context.buffer]
-	mov	rcx, left
+	mov	rcx, r12
+	mov	[rbp + context.fill], cl
 	rep	movsb
-	mov	[rbp + context.fill], left
 
 .return:
-	pop	left
+	pop	r12
 	pop	rbx
 	pop	rbp
 	ret
@@ -431,7 +429,7 @@ poly1305_mac:
 
 
 	; do we have data left in internal buffer?
-	mov	rcx, [rbp + context.fill]
+	movzx	rcx, byte [rbp + context.fill]
 	or	rcx, rcx
 	jz	.finalize
 

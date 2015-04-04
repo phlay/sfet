@@ -40,7 +40,7 @@ struct poly1305 {
 	uint8_t		secret[16];
 
 	uint8_t		buffer[17];
-	int		fill;
+	uint8_t		fill;
 };
 
 

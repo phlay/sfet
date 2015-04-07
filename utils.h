@@ -1,20 +1,18 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <stdint.h>
-#include <stdio.h>
-#include <limits.h>
+#include <stddef.h>
 
-/* useful macros */
+#ifndef MIN
 #define MIN(a, b)	((a) < (b)) ? (a) : (b)
+#endif
+
+#ifndef MAX
 #define MAX(a, b)	((a) > (b)) ? (a) : (b)
+#endif
 
-
-void	*x_malloc(size_t size);
-char	*x_strdup(const char *s);
-int	 exists(const char *path);
-
-int	 secrand(void *, size_t);
+int	 secrand(void *buf, size_t len);
 int	 ctiseq(const void *s1, const void *s2, size_t n);
+int	 exists(const char *path);
 
 #endif

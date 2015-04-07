@@ -1,6 +1,6 @@
 include ../config.mk
 
-CC = cc
+CC = gcc
 CFLAGS = -std=gnu99 -Wall -pedantic -O2 -I.. -DSELFTEST
 LDFLAGS =
 

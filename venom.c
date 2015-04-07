@@ -42,10 +42,8 @@ struct config {
 
 	uint64_t	 iterations;
 	uint64_t	 chunklen;
-	char		*passfn;	/* XXX const char? */
+	const char	*passfn;
 };
-
-
 
 struct header {
 	char	 magic[5];
@@ -57,39 +55,39 @@ struct header {
 
 
 
-void
-printhex(const char *label, const uint8_t *vec, size_t n)
+static void
+printhex(FILE *fp, const uint8_t *vec, size_t n)
 {
 	int i;
 
-        fprintf(stderr, "%s: ", label);
-        if (n)
+        if (n > 0) {
                 for (i = 0; i < n; i++)
-                        fprintf(stderr, "%02x", vec[i]);
-        else
-                fputc('-', stderr);
+                        fprintf(fp, "%02x", vec[i]);
+	} else
+                fputc('-', fp);
 
-        fputc('\n', stderr);
+        fputc('\n', fp);
 }
 
 
-void
+static void
 printusage(FILE *fp)
 {
-	fprintf(fp, "Usage: venom [-hVedsvf] [-p <fn>] [-i <iter>] [-m <mode>] [<input>] [<output>]\n");
+	fprintf(fp, "decrypt:\tvenom [-d] [-vf] [-p <fn>] [<input>] [<output>]\n");
+	fprintf(fp, "encrypt:\tvenom -e [-vf] [-p <fn>] [-i <iter>] [-c <length>] [<input>] [<output>]\n");
+	fprintf(fp, "show metadata:\tvenom -s [-v] [<input>]\n");
+	fprintf(fp, "\n");
 	fprintf(fp, "options:\n");
-	fprintf(fp, "  -h\t\thelp\n");
-	fprintf(fp, "  -V\t\tversion\n");
-	fprintf(fp, "  -e\t\tencrypt\n");
-	fprintf(fp, "  -d\t\tdecrypt (default)\n");
-	fprintf(fp, "  -s\t\tshow file metadata\n");
-	fprintf(fp, "  -v\t\tverbose\n");
-	fprintf(fp, "  -f\t\tforce\n");
+	fprintf(fp, "  -v\t\tincrease verbosity level\n");
+	fprintf(fp, "  -f\t\toverwrite outputfile, if it already exists\n");
 	fprintf(fp, "  -p <file>\tread password from <file> instead of %s\n", PASSWD_SRC);
-	fprintf(fp, "  -i <n>\tset pbkdf2 iteration number to <n>\n");
+	fprintf(fp, "  -i <n>\tset pbkdf2 iteration number to <n>, encryption only\n");
+	fprintf(fp, "  -c <length>\tset chunk size to <length>, encryption only\n");
+	fprintf(fp, "  -V\t\tshow version\n");
+	fprintf(fp, "  -h\t\tshow this help message\n");
 }
 
-void
+static void
 printversion(FILE *fp)
 {
 	fprintf(fp, "venom %s, file version: %d\n", VERSION, FILEVER);
@@ -107,6 +105,36 @@ printversion(FILE *fp)
 #endif
 }
 
+static int
+parse_chunklen(uint64_t *out, const char *str)
+{
+	char *endp;
+	long long int n;
+
+	n = strtoll(str, &endp, 10);
+	if (n <= 0 || n == LONG_MAX)
+		return -1;
+
+	switch (*endp) {
+	case '\0':
+		*out = n;
+		break;
+	case 'k': case 'K':
+		*out = (uint64_t)n * 1024;
+		break;
+	case 'm': case 'M':
+		*out = (uint64_t)n * 1024 * 1024;
+		break;
+	case 'g': case 'G':
+		*out = (uint64_t)n * 1024 * 1024 * 1024;
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
 
 static inline void
 next_nonce(uint8_t nonce[16])
@@ -121,7 +149,7 @@ next_nonce(uint8_t nonce[16])
  * main functions
  */
 
-int
+static int
 encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 {
 	FILE *in = stdin;
@@ -170,9 +198,11 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	}
 
 	/* initialize crypto */
-	if (conf->verbose > 1) {
+	if (conf->verbose > 0) {
+		fprintf(stderr, "chunk length: %" PRIu64 "\n", conf->chunklen);
 		fprintf(stderr, "iterations: %" PRIu64 "\n", conf->iterations);
-		printhex("nonce", nonce, 16);
+		fprintf(stderr, "nonce: ");
+		printhex(stderr, nonce, 16);
 	}
 
 	pbkdf2_hmac_sha512(key, sizeof(key), passwd, PASSLEN, nonce, 16, conf->iterations);
@@ -246,15 +276,15 @@ errout:
 		burn(buffer, conf->chunklen+16);
 		free(buffer);
 	}
-	if (in != stdin)
+	if (in && in != stdin)
 		fclose(in);
-	if (out != stdout)
+	if (out && out != stdout)
 		fclose(out);
 	return 1;
 }
 
 
-int
+static int
 decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 {
 	FILE *in = stdin;
@@ -317,6 +347,13 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 
 
 	/* initialize cryptography */
+	if (conf->verbose > 0) {
+		fprintf(stderr, "chunk length: %" PRIu64 "\n", chunklen);
+		fprintf(stderr, "iterations: %" PRIu64 "\n", be64toh(header.iter));
+		fprintf(stderr, "nonce: ");
+		printhex(stderr, nonce, 16);
+	}
+
 	pbkdf2_hmac_sha512(key, sizeof(key), passwd, PASSLEN, nonce, 16, be64toh(header.iter));
 
 	ctr_serpent_init(&ctrctx, key);
@@ -335,8 +372,7 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	}
 	poly1305_serpent_authdata(&polyctx,
 			(uint8_t*)&header, sizeof(struct header),
-			nonce,
-			check);
+			nonce, check);
 	next_nonce(nonce);
 	if (!ctiseq(mac, check, 16)) {
 		warnx("%s: corrupt header or wrong password", inputfn);
@@ -365,10 +401,11 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	do {
 		n = fread(buffer, 1, chunklen+16, in);
 		if (n < 16) {
-			if (feof(in))
-				warnx("%s: file too short, incomplete chunk", inputfn);
-			else
+			/* is this an error or is the file damaged? */
+			if (ferror(in))
 				warn("%s: can't read from input file", inputfn);
+			else
+				warnx("%s: incomplete chunk, file is damaged", inputfn);
 
 			goto errout;
 		}
@@ -379,7 +416,7 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		poly1305_serpent_authdata(&polyctx, buffer, n, nonce, check);
 		next_nonce(nonce);
 		if (!ctiseq(buffer+n, check, 16)) {
-			warnx("%s: corrupt chunk, abort decryption", inputfn);
+			warnx("%s: WARNING, file was modified!", inputfn);
 			goto errout;
 		}
 
@@ -390,6 +427,12 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 			goto errout;
 		}
 	} while (n == chunklen);
+
+	/* check for input error */
+	if (ferror(in)) {
+		warn("%s: can't read from input file", inputfn);
+		goto errout;
+	}
 
 	
 	burn(buffer, chunklen+16);
@@ -402,9 +445,9 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	return 0;
 
 errout:
-	if (in != stdin)
+	if (in && in != stdin)
 		fclose(in);
-	if (out != stdout)
+	if (out && out != stdout)
 		fclose(out);
 
 	if (buffer != NULL) {
@@ -432,8 +475,10 @@ show(const char *inputfn, const struct config *conf)
 
 	if (strcmp(inputfn, "-") != 0) {
 		in = fopen(inputfn, "r");
-		if (in == NULL)
-			err(1, "%s: can't open input file", inputfn);
+		if (in == NULL) {
+			warn("%s: can't open input file", inputfn);
+			goto errout;
+		}
 	}
 
 	/* read header */
@@ -452,11 +497,7 @@ show(const char *inputfn, const struct config *conf)
 	}
 
 
-	/* 
-	 * XXX this function should write to stdout
-	 */
-
-	fprintf(stderr, "venom file, version: %u\n", be16toh(header.version));
+	printf("venom file, version: %u\n", be16toh(header.version));
 
 	if (be16toh(header.version) != FILEVER) {
 		warnx("%s: unsupported file version: %u",
@@ -467,9 +508,10 @@ show(const char *inputfn, const struct config *conf)
 	chunklen = be64toh(header.chunklen);
 
 	/* show key param values */
-	fprintf(stderr, "iterations: %" PRIu64 "\n", be64toh(header.iter));
-	fprintf(stderr, "chunk length: %" PRIu64 "\n", chunklen);
-	printhex("nonce", header.nonce, 16);
+	printf("iterations: %" PRIu64 "\n", be64toh(header.iter));
+	printf("chunk length: %" PRIu64 "\n", chunklen);
+	printf("nonce: ");
+	printhex(stdout, header.nonce, 16);
 
 	if (fread(mac, 1, 16, in) != 16) {
 		if (feof(in))
@@ -479,7 +521,8 @@ show(const char *inputfn, const struct config *conf)
 		goto errout;
 	}
 
-	printhex("header mac", mac, 16);
+	printf("header mac: ");
+	printhex(stdout, mac, 16);
 
 	if (conf->verbose > 0) {
 		buffer = malloc(chunklen+16);
@@ -489,7 +532,6 @@ show(const char *inputfn, const struct config *conf)
 		}
 
 		do {
-
 			n = fread(buffer, 1, chunklen+16, in);
 			if (n < 16) {
 				if (feof(in))
@@ -501,8 +543,14 @@ show(const char *inputfn, const struct config *conf)
 
 			n -= 16;
 
-			printhex("chunk mac", buffer+n, 16);
+			printf("chunk mac: ");
+			printhex(stdout, buffer+n, 16);
 		} while (n == chunklen);
+
+		if (ferror(in)) {
+			warn("%s: can't read input file", inputfn);
+			goto errout;
+		}
 	}
 
 	if (buffer != NULL) {
@@ -519,7 +567,7 @@ errout:
 		burn(buffer, chunklen+16);
 		free(buffer);
 	}
-	if (in != stdin)
+	if (in && in != stdin)
 		fclose(in);
 
 	return 1;
@@ -529,12 +577,12 @@ errout:
 int
 main(int argc, char *argv[])
 {
-	char *inputfn = "-";
-	char *outputfn = "-";
+	const char *inputfn = "-";
+	const char *outputfn = "-";
 
 	struct config conf;
 	char mode = 'd';
-	int rc;
+	int option;
 	int rval = 1;
 
 	/* set default config values */
@@ -544,10 +592,9 @@ main(int argc, char *argv[])
 	conf.chunklen = CHUNKLEN;
 	conf.passfn = PASSWD_SRC;
 
-
 	/* parse parameters */
-	while ((rc = getopt(argc, argv, "hVedsvfi:m:p:")) != -1) {
-		switch (rc) {
+	while ((option = getopt(argc, argv, "hVedsvfi:c:p:")) != -1) {
+		switch (option) {
 
 		/* options */
 		case 'v':
@@ -566,6 +613,11 @@ main(int argc, char *argv[])
 			conf.passfn = optarg;
 			break;
 
+		case 'c':
+			if (parse_chunklen(&conf.chunklen, optarg) == -1)
+				errx(1, "illegal chunk length: %s", optarg);
+			break;
+
 		/* main modes */
 		case 'h':
 			printusage(stdout);
@@ -577,7 +629,7 @@ main(int argc, char *argv[])
 		case 'e':
 		case 'd':
 		case 's':
-			mode = rc;
+			mode = option;
 			break;
 
 		default:
@@ -586,7 +638,6 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 	}
-
 	argc -= optind;
 	argv += optind;
 

@@ -23,41 +23,7 @@
 #include <fcntl.h>
 #include <libgen.h>
 
-#include <err.h>
-
 #include "utils.h"
-
-
-void *
-x_malloc(size_t size)
-{
-        void *rval;
-
-        rval = malloc(size);
-        if (rval == NULL)
-                err(1, "can't allocate memory");
-
-        return rval;
-}
-
-char *
-x_strdup(const char *s)
-{
-        char *rval;
-
-        rval = strdup(s);
-        if (rval == NULL)
-                err(1, "can't duplicate string");
-
-        return rval;
-}
-
-int
-exists(const char *path)
-{
-        struct stat sb;
-	return (stat(path, &sb) == -1) ? 0 : 1;
-}
 
 
 
@@ -145,4 +111,12 @@ ctiseq(const void *s1, const void *s2, size_t n)
 		mask |= *p1++ ^ *p2++;
 
 	return ((mask-1) >> 8) & 1;
+}
+
+
+int
+exists(const char *path)
+{
+        struct stat sb;
+	return (stat(path, &sb) == -1) ? 0 : 1;
 }

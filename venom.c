@@ -1,5 +1,6 @@
 #define _FILE_OFFSET_BITS	64
 
+#include <sys/mman.h>
 #include <sys/stat.h>
 
 #include <stdint.h>
@@ -18,6 +19,8 @@
 #include "pbkdf2-hmac-sha512.h"
 #include "poly1305-serpent.h"
 #include "ctr-serpent.h"
+#include "burn.h"
+#include "burnstack.h"
 
 
 #define ITERATIONS	256000
@@ -40,7 +43,6 @@ struct config {
 	uint64_t	 iterations;
 	uint64_t	 chunklen;
 	char		*passfn;	/* XXX const char? */
-	int		 filemode;
 };
 
 
@@ -85,7 +87,6 @@ printusage(FILE *fp)
 	fprintf(fp, "  -f\t\tforce\n");
 	fprintf(fp, "  -p <file>\tread password from <file> instead of %s\n", PASSWD_SRC);
 	fprintf(fp, "  -i <n>\tset pbkdf2 iteration number to <n>\n");
-	fprintf(fp, "  -m <mode>\tset file mode bits of output\n");
 }
 
 void
@@ -230,8 +231,7 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		goto errout;
 	}
 
-
-	/* XXX overwrite buffer? */
+	burn(buffer, conf->chunklen+16);
 	free(buffer);
 
 	if (in != stdin)
@@ -242,8 +242,10 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	return 0;
 
 errout:
-	/* XXX overwrite buffer? */
-	free(buffer);
+	if (buffer != NULL) {
+		burn(buffer, conf->chunklen+16);
+		free(buffer);
+	}
 	if (in != stdin)
 		fclose(in);
 	if (out != stdout)
@@ -390,8 +392,7 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	} while (n == chunklen);
 
 	
-
-	/* XXX overwrite buffer? */
+	burn(buffer, chunklen+16);
 	free(buffer);
 
 	if (in != stdin)
@@ -406,8 +407,10 @@ errout:
 	if (out != stdout)
 		fclose(out);
 
-	/* XXX overwrite buffer? */
-	free(buffer);
+	if (buffer != NULL) {
+		burn(buffer, chunklen+16);
+		free(buffer);
+	}
 
 	/* XXX delete output file */
 
@@ -422,7 +425,6 @@ show(const char *inputfn, const struct config *conf)
 	struct header header;
 	uint8_t *buffer = NULL;
 	size_t n;
-
 
 	uint64_t chunklen;
 
@@ -503,15 +505,20 @@ show(const char *inputfn, const struct config *conf)
 		} while (n == chunklen);
 	}
 
-
-	free(buffer);
+	if (buffer != NULL) {
+		burn(buffer, chunklen+16);
+		free(buffer);
+	}
 	if (in != stdin)
 		fclose(in);
 
 	return 0;
 
 errout:
-	free(buffer);
+	if (buffer != NULL) {
+		burn(buffer, chunklen+16);
+		free(buffer);
+	}
 	if (in != stdin)
 		fclose(in);
 
@@ -536,7 +543,6 @@ main(int argc, char *argv[])
 	conf.iterations = ITERATIONS;
 	conf.chunklen = CHUNKLEN;
 	conf.passfn = PASSWD_SRC;
-	conf.filemode = -1;
 
 
 	/* parse parameters */
@@ -558,12 +564,6 @@ main(int argc, char *argv[])
 
 		case 'p':
 			conf.passfn = optarg;
-			break;
-
-		case 'm':
-			conf.filemode = strtol(optarg, NULL, 8);
-			if (conf.filemode == LONG_MIN || conf.filemode == LONG_MAX)
-				errx(1, "illegal mode: %d", conf.filemode);
 			break;
 
 		/* main modes */
@@ -610,8 +610,9 @@ main(int argc, char *argv[])
 			errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
 	}
 
-	/* XXX lock memory */
-
+	/* lock memory */
+	if (mlockall(MCL_CURRENT|MCL_FUTURE) == -1)
+		err(1, "can't lock memory");
 
 	/* now do our job */
 	switch (mode) {
@@ -626,7 +627,8 @@ main(int argc, char *argv[])
 		break;
 	}
 		 
-	/* XXX cleanup stack */
+	/* cleanup stack */
+	burnstack(64);
 
 	return rval;
 }

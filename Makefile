@@ -11,7 +11,7 @@ AS = nasm
 ASFLAGS = -Ox -f elf64
 
 
-OBJ = utils.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o readpass.o venom.o
+OBJ = utils.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o readpass.o venom.o burnstack.o burn.o
 
 ifeq ($(HAVE_GETRANDOM), yes)
 	CFLAGS += -DHAVE_GETRANDOM

@@ -31,9 +31,11 @@ poly1305aes_authenticate(uint8_t out[16],
 	struct poly1305 ctx;
 	uint8_t encno[16];
 
-	aes(encno, kr, nonce);
+	poly1305_setkey(&ctx, kr+16);
 
-	poly1305_init(&ctx, kr+16, encno);
+	aes(encno, kr, nonce);
+	poly1305_init(&ctx, encno);
+
 	poly1305_update(&ctx, msg, len);
 	poly1305_mac(&ctx, out);
 }

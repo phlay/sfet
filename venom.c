@@ -32,13 +32,6 @@
 #define CHUNKLEN	(32*1024*1024)
 
 
-struct venom {
-	struct ctr_serpent		ctr;
-	struct poly1305_serpent		mac;
-
-	uint8_t				nonce[16];
-};
-
 
 struct config {
 	int		 verbose;
@@ -114,38 +107,12 @@ printversion(FILE *fp)
 }
 
 
-
-void
-crypto_init(struct venom *ctx, const uint8_t passwd[PASSLEN],
-		const uint8_t nonce[16], uint64_t iter)
-{
-	uint8_t key[32+32]; /* 32 serpent ctr + 32 poly1305-serpent */
-
-	pbkdf2_hmac_sha512(key, sizeof(key), passwd, PASSLEN, nonce, 16, iter);
-
-	ctr_serpent_init(&ctx->ctr, key);
-	ctr_serpent_nonce(&ctx->ctr, nonce);
-
-	poly1305_serpent_setkey(&ctx->mac, key+32);
-
-	/* copy nonce for chunk macs */
-	memcpy(ctx->nonce, nonce, 16);
-}
-
-
-void
-crypto_authdata(struct venom *ctx, const uint8_t *data, size_t len, uint8_t mac[16])
+static inline void
+next_nonce(uint8_t nonce[16])
 {
 	int i;
-
-	poly1305_serpent_nonce(&ctx->mac, ctx->nonce);
-	poly1305_update(&ctx->mac.poly1305, data, len);
-	poly1305_mac(&ctx->mac.poly1305, mac);
-
-	/* advance mac nonce */
-	for (i = 15; i >= 0 && ++ctx->nonce[i] == 0; i--);
+	for (i = 15; i >= 0 && ++nonce[i] == 0; i--);
 }
-
 
 
 
@@ -164,11 +131,12 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	size_t n;
 
 	uint8_t passwd[PASSLEN];
-	uint8_t random_nonce[16];
+	uint8_t key[32+32]; /* 32 serpent ctr + 32 poly1305-serpent */
+	uint8_t nonce[16];
 
-	struct venom crypto;
+	struct ctr_serpent ctrctx;
+	struct poly1305_serpent polyctx;
 
-	int rc;
 
 
 	/* allocate chunk buffer */
@@ -189,14 +157,13 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	}
 
 
-	/* read password */
-	rc = read_pass_fn(conf->passfn, passwd, sizeof(passwd),
-			"Password: ", "Confirm: ");
-	if (rc == -1) 
-		goto errout;	/* read_pass_fn is verbose, no extra warning needed */
+	/* read password (read_pass_fn is verbose) */
+	if (read_pass_fn(conf->passfn, passwd, sizeof(passwd),
+			"Password: ", "Confirm: ") == -1)
+		goto errout;
 
-	/* generate random nonce */
-	if (secrand(random_nonce, 16) == -1) {
+	/* initialize nonce with random data */
+	if (secrand(nonce, 16) == -1) {
 		warn("can't read random data");
 		goto errout;
 	}
@@ -204,9 +171,14 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	/* initialize crypto */
 	if (conf->verbose > 1) {
 		fprintf(stderr, "iterations: %" PRIu64 "\n", conf->iterations);
-		printhex("nonce", random_nonce, 16);
+		printhex("nonce", nonce, 16);
 	}
-	crypto_init(&crypto, passwd, random_nonce, conf->iterations);
+
+	pbkdf2_hmac_sha512(key, sizeof(key), passwd, PASSLEN, nonce, 16, conf->iterations);
+
+	ctr_serpent_init(&ctrctx, key);
+	ctr_serpent_nonce(&ctrctx, nonce);
+	poly1305_serpent_setkey(&polyctx, key+32);
 
 
 	/* open output file */
@@ -223,32 +195,40 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	memcpy(header.magic, "VENOM", 5);
 	header.version = htobe16(FILEVER);
 	header.iter = htobe64(conf->iterations);
-	memcpy(header.nonce, random_nonce, 16);
+	memcpy(header.nonce, nonce, 16);
 	header.chunklen = htobe64(conf->chunklen);
 	memcpy(buffer, &header, sizeof(struct header));
 
 	/* authenticate and write header */
-	crypto_authdata(&crypto, buffer, sizeof(struct header),
-			buffer+sizeof(struct header));
+	poly1305_serpent_authdata(&polyctx, buffer, sizeof(struct header),
+			nonce, buffer+sizeof(struct header));
+	next_nonce(nonce);
+
 	if (fwrite(buffer, sizeof(struct header)+16, 1, out) != 1) {
 		warn("%s: can't write to output file", outputfn);
 		goto errout;
 	}
 
-
-
-	/* encryption loop XXX way may not dectect an error in our input stream */
+	/* encryption loop */
 	do {
 		n = fread(buffer, 1, conf->chunklen, in);
 
-		ctr_serpent_crypt(&crypto.ctr, buffer, buffer, n);
-		crypto_authdata(&crypto, buffer, n, buffer+n);
+		ctr_serpent_crypt(&ctrctx, buffer, buffer, n);
+
+		poly1305_serpent_authdata(&polyctx, buffer, n, nonce, buffer+n);
+		next_nonce(nonce);
 
 		if (fwrite(buffer, 1, n+16, out) != n+16) {
 			warn("%s: can't write to output file", outputfn);
 			goto errout;
 		}
 	} while (n == conf->chunklen);
+
+	/* check for reading error */
+	if (ferror(in)) {
+		warn("%s: error reading file", inputfn);
+		goto errout;
+	}
 
 
 	/* XXX overwrite buffer? */
@@ -285,10 +265,11 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	uint64_t chunklen;
 
 	uint8_t passwd[PASSLEN];
+	uint8_t key[32+32]; /* 32 serpent ctr + 32 poly1305-serpent */
+	uint8_t nonce[16];
 
-	struct venom crypto;
-
-	int rc;
+	struct ctr_serpent ctrctx;
+	struct poly1305_serpent polyctx;
 
 
 
@@ -322,16 +303,23 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		goto errout;
 	}
 
+	memcpy(nonce, header.nonce, 16);
+	chunklen = be64toh(header.chunklen);
+
 
 
 	/* read password */
-	rc = read_pass_fn(conf->passfn, passwd, sizeof(passwd), "Password: ", NULL);
-	if (rc == -1) 
+	if (read_pass_fn(conf->passfn, passwd, sizeof(passwd),
+			"Password: ", NULL) == -1)
 		goto errout;	/* read_pass_fn is verbose */
 
 
 	/* initialize cryptography */
-	crypto_init(&crypto, passwd, header.nonce, be64toh(header.iter));
+	pbkdf2_hmac_sha512(key, sizeof(key), passwd, PASSLEN, nonce, 16, be64toh(header.iter));
+
+	ctr_serpent_init(&ctrctx, key);
+	ctr_serpent_nonce(&ctrctx, nonce);
+	poly1305_serpent_setkey(&polyctx, key+32);
 
 
 	/* read and check header mac */
@@ -343,15 +331,16 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 
 		goto errout;
 	}
-	crypto_authdata(&crypto, (uint8_t*)&header, sizeof(struct header), check);
+	poly1305_serpent_authdata(&polyctx,
+			(uint8_t*)&header, sizeof(struct header),
+			nonce,
+			check);
+	next_nonce(nonce);
 	if (!ctiseq(mac, check, 16)) {
 		warnx("%s: corrupt header or wrong password", inputfn);
 		goto errout;
 	}
 
-
-	/* read chunk length from header and allocate buffer acordingly */
-	chunklen = be64toh(header.chunklen);
 
 	/* allocate chunk buffer */
 	buffer = malloc(chunklen + 16);
@@ -385,19 +374,21 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		/* set n to the data length in this chunk */
 		n -= 16;
 
-		crypto_authdata(&crypto, buffer, n, check);
+		poly1305_serpent_authdata(&polyctx, buffer, n, nonce, check);
+		next_nonce(nonce);
 		if (!ctiseq(buffer+n, check, 16)) {
 			warnx("%s: corrupt chunk, abort decryption", inputfn);
 			goto errout;
 		}
 
-		ctr_serpent_crypt(&crypto.ctr, buffer, buffer, n);
+		ctr_serpent_crypt(&ctrctx, buffer, buffer, n);
 
 		if (fwrite(buffer, 1, n, out) != n) {
 			warn("%s: can't write to output file", outputfn);
 			goto errout;
 		}
 	} while (n == chunklen);
+
 	
 
 	/* XXX overwrite buffer? */
@@ -607,11 +598,11 @@ main(int argc, char *argv[])
 		outputfn = argv[1];
 
 	if (conf.iterations < 1024)
-		errx(1, "illegal number of pbkdf2 iterations: %ld",
+		errx(1, "illegal number of pbkdf2 iterations: %" PRIu64,
 				conf.iterations);
 
 	if (conf.chunklen < sizeof(struct header))
-		errx(1, "chunk size too small: %ld", conf.chunklen);
+		errx(1, "chunk size too small: %" PRIu64, conf.chunklen);
 
 	/* early warning if output file already exists... */
 	if (strcmp(outputfn, "-") != 0) {

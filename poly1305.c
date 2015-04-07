@@ -280,24 +280,26 @@ add128(uint8_t out[16], const uint8_t a[16], const uint8_t b[16])
 }
 
 
+/*
+ * exported functions
+ */
 
 void
-poly1305_init(struct poly1305 *ctx, const uint8_t r[16], const uint8_t s[16])
+poly1305_setkey(struct poly1305 *ctx, const uint8_t r[16])
 {
-	uint8_t prepr[16];
+	uint8_t clampr[16];
 	int i;
 
-	/* prepare r */
-	memcpy(prepr, r, 16);
-	prepr[3] &= 0xf;
-	prepr[4] &= 0xfc;
-	prepr[7] &= 0xf;
-	prepr[8] &= 0xfc;
-	prepr[11] &= 0xf;
-	prepr[12] &= 0xfc;
-	prepr[15] &= 0xf;
-	import1305(ctx->r, prepr, 0);
-
+	/* clamp r and import it */
+	memcpy(clampr, r, 16);
+	clampr[3] &= 0xf;
+	clampr[4] &= 0xfc;
+	clampr[7] &= 0xf;
+	clampr[8] &= 0xfc;
+	clampr[11] &= 0xf;
+	clampr[12] &= 0xfc;
+	clampr[15] &= 0xf;
+	import1305(ctx->r, clampr, 0);
 
 #ifdef __LP64__
 	for (i = 0; i < LIMB_NUM-1; i++)
@@ -306,11 +308,18 @@ poly1305_init(struct poly1305 *ctx, const uint8_t r[16], const uint8_t s[16])
 	for (i = 0; i < LIMB_NUM-1; i++)
 		ctx->sr[i] = 5*ctx->r[i+1];
 #endif
+}
+
+void
+poly1305_init(struct poly1305 *ctx, const uint8_t s[16])
+{
+	int i;
 
 	/* init state */
 	for (i = 0; i < LIMB_NUM; i++)
 		ctx->state[i] = 0;
 
+	/* reset internal buffer */
 	ctx->fill = 0;
 
 	/* copy secret (encrypted nonce) */

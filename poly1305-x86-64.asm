@@ -152,24 +152,15 @@ endstruc
 
 
 
-
 section	.text
-
 
 ;; Input:
 ;;	RDI	context
 ;;	RSI	r
-;;	RDX	s
 ;;
 	align	16
-	global	poly1305_init
-poly1305_init:
-	cld
-
-	; copy secret
-	movdqu	xmm0, [rdx]
-	movdqu	[rdi + context.secret], xmm0
-
+	global	poly1305_setkey
+poly1305_setkey:
 
 	mov	mask, 0xfffffffffff
 
@@ -220,6 +211,21 @@ poly1305_init:
 	add	rax, rdx
 	mov	[rdi + context.Key20R1], rax
 
+	ret
+
+
+;; Input:
+;;	RDI	context
+;;	RSI	secret (encrypted nonce)
+;;
+	align	16
+	global	poly1305_init
+poly1305_init:
+	cld
+
+	; copy secret
+	movdqu	xmm0, [rsi]
+	movdqu	[rdi + context.secret], xmm0
 
 	; context.status <- 0
 	xor	rax, rax

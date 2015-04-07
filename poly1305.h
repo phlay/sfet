@@ -44,7 +44,9 @@ struct poly1305 {
 };
 
 
-void	poly1305_init(struct poly1305 *ctx, const uint8_t r[16], const uint8_t s[16]);
+void	poly1305_setkey(struct poly1305 *ctx, const uint8_t r[16]);
+void	poly1305_init(struct poly1305 *ctx, const uint8_t s[16]);
+
 void	poly1305_update(struct poly1305 *ctx, const uint8_t *data, size_t len);
 void	poly1305_mac(struct poly1305 *ctx, uint8_t mac[16]);
 

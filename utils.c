@@ -59,20 +59,6 @@ exists(const char *path)
 	return (stat(path, &sb) == -1) ? 0 : 1;
 }
 
-#if 0
-static int
-direxists(const char *dir)
-{
-        struct stat sb;
-
-	/* return 'no' if stat fails */
-        if (stat(dir, &sb) < 0)
-                return 0;
-
-        return S_ISDIR(sb.st_mode) ? 1 : 0;
-}
-#endif
-
 
 
 #ifdef HAVE_GETRANDOM

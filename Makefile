@@ -33,7 +33,6 @@ endif
 .PHONY: clean all install test
 .SUFFIXES: .asm
 
-
 all: venom
 
 ${OBJ}: config.mk
@@ -43,6 +42,8 @@ ${OBJ}: config.mk
 .asm.o:
 	$(AS) $(ASFLAGS) $< -o $@
 
+print-%:
+	@echo $*=$($*)
 
 venom: $(OBJ)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ)

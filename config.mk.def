@@ -1,3 +1,7 @@
+# compile into an static binary
+#
+STATIC=no
+
 # if you have a linux system with getrandom() system call, set to yes
 #
 HAVE_GETRANDOM=no

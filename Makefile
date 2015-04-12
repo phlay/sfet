@@ -4,8 +4,8 @@
 include config.mk
 
 CC = gcc
-CFLAGS = -std=gnu99 -Wall -pedantic -O2
-LDFLAGS = 
+CFLAGS = -std=gnu99 -Wall -pedantic -O2 -mtune=$(MTUNE)
+LDFLAGS =
 
 AS = nasm
 ASFLAGS = -Ox -f elf64

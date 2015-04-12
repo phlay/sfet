@@ -2,6 +2,11 @@
 #
 STATIC=no
 
+# specify the name of the target processor for which GCC should tune the
+# performance (see gcc manpage for options)
+#
+MTUNE=generic
+
 # if you have a linux system with getrandom() system call, set to yes
 #
 HAVE_GETRANDOM=no

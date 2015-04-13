@@ -18,12 +18,14 @@
 #include <err.h>
 
 #include "utils.h"
+#include "cleanup.h"
+#include "buffer.h"
+#include "burnstack.h"
 #include "readpass.h"
 #include "pbkdf2-hmac-sha512.h"
 #include "poly1305-serpent.h"
 #include "ctr-serpent.h"
-#include "burn.h"
-#include "burnstack.h"
+
 
 
 #define ITERATIONS	256000
@@ -152,11 +154,12 @@ next_nonce(uint8_t nonce[16])
 static int
 encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 {
-	FILE *in = stdin;
-	FILE *out = stdout;
+	cu_fclose FILE *in = stdin;
+	cu_fclose FILE *out = stdout;
+
+	cu_freebuffer struct buffer *buffer = NULL;
 
 	struct header header;
-	uint8_t *buffer;
 	size_t n;
 
 	uint8_t passwd[PASSLEN];
@@ -167,34 +170,24 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	struct poly1305_serpent polyctx;
 
 
-
-	/* allocate chunk buffer */
-	buffer = malloc(conf->chunklen + 16);
-	if (buffer == NULL) {
-		warn("can't allocate memory");
-		return 1;
-	}
-
-
 	/* open input file */
 	if (strcmp(inputfn, "-") != 0) {
 		in = fopen(inputfn, "r");
 		if (in == NULL) {
 			warn("%s: can't open input file", inputfn);
-			goto errout;
+			return 1;
 		}
 	}
-
 
 	/* read password (read_pass_fn is verbose) */
 	if (read_pass_fn(conf->passfn, passwd, sizeof(passwd),
 			"Password: ", "Confirm: ") == -1)
-		goto errout;
+		return 1;
 
 	/* initialize nonce with random data */
 	if (secrand(nonce, 16) == -1) {
 		warn("can't read random data");
-		goto errout;
+		return 1;
 	}
 
 	/* initialize crypto */
@@ -212,12 +205,20 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	poly1305_serpent_setkey(&polyctx, key+32);
 
 
+	/* allocate chunk buffer */
+	buffer = buffer_alloc(conf->chunklen + 16);
+	if (buffer == NULL) {
+		warn("can't allocate memory");
+		return 1;
+	}
+
+
 	/* open output file */
 	if (strcmp(outputfn, "-") != 0) {
 		out = fopen(outputfn, conf->force ? "w" : "wx");
 		if (out == NULL) {
 			warn("%s: can't open output file", outputfn);
-			goto errout;
+			return 1;
 		}
 	}
 
@@ -228,70 +229,52 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	header.iter = htobe64(conf->iterations);
 	memcpy(header.nonce, nonce, 16);
 	header.chunklen = htobe64(conf->chunklen);
-	memcpy(buffer, &header, sizeof(struct header));
+	memcpy(buffer->data, &header, sizeof(struct header));
 
 	/* authenticate and write header */
-	poly1305_serpent_authdata(&polyctx, buffer, sizeof(struct header),
-			nonce, buffer+sizeof(struct header));
+	poly1305_serpent_authdata(&polyctx, buffer->data, sizeof(struct header),
+			nonce, buffer->data+sizeof(struct header));
 	next_nonce(nonce);
 
-	if (fwrite(buffer, sizeof(struct header)+16, 1, out) != 1) {
+	if (fwrite(buffer->data, sizeof(struct header)+16, 1, out) != 1) {
 		warn("%s: can't write to output file", outputfn);
-		goto errout;
+		return 1;
 	}
 
 	/* encryption loop */
 	do {
-		n = fread(buffer, 1, conf->chunklen, in);
+		n = fread(buffer->data, 1, conf->chunklen, in);
 
-		ctr_serpent_crypt(&ctrctx, buffer, buffer, n);
+		ctr_serpent_crypt(&ctrctx, buffer->data, buffer->data, n);
 
-		poly1305_serpent_authdata(&polyctx, buffer, n, nonce, buffer+n);
+		poly1305_serpent_authdata(&polyctx, buffer->data, n, nonce, buffer->data+n);
 		next_nonce(nonce);
 
-		if (fwrite(buffer, 1, n+16, out) != n+16) {
+		if (fwrite(buffer->data, 1, n+16, out) != n+16) {
 			warn("%s: can't write to output file", outputfn);
-			goto errout;
+			return 1;
 		}
 	} while (n == conf->chunklen);
 
 	/* check for reading error */
 	if (ferror(in)) {
 		warn("%s: error reading file", inputfn);
-		goto errout;
+		return 1;
 	}
-
-	burn(buffer, conf->chunklen+16);
-	free(buffer);
-
-	if (in != stdin)
-		fclose(in);
-	if (out != stdout)
-		fclose(out);
 
 	return 0;
-
-errout:
-	if (buffer != NULL) {
-		burn(buffer, conf->chunklen+16);
-		free(buffer);
-	}
-	if (in && in != stdin)
-		fclose(in);
-	if (out && out != stdout)
-		fclose(out);
-	return 1;
 }
 
 
 static int
 decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 {
-	FILE *in = stdin;
-	FILE *out = stdout;
+	cu_fclose FILE *in = stdin;
+	cu_fclose FILE *out = stdout;
 	
+	cu_freebuffer struct buffer *buffer = NULL;
+
 	struct header header;
-	uint8_t *buffer = NULL;
 	size_t n;
 	uint8_t mac[16], check[16];
 	uint64_t chunklen;
@@ -304,16 +287,14 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	struct poly1305_serpent polyctx;
 
 
-
 	/* open input file */
 	if (strcmp(inputfn, "-") != 0) {
 		in = fopen(inputfn, "r");
 		if (in == NULL) {
 			warn("%s: can't open input file", inputfn);
-			goto errout;
+			return 1;
 		}
 	}
-	
 
 	/* read header */
 	n = fread(&header, sizeof(struct header), 1, in);
@@ -322,28 +303,27 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 			warnx("%s: file too short, can't read header", inputfn);
 		else
 			warn("%s: can't read header", inputfn);
-		goto errout;
+		return 1;
 	}
 
 	if (memcmp(header.magic, "VENOM", 5) != 0) {
 		warnx("%s: not a venom file", inputfn);
-		goto errout;
+		return 1;
 	}
 	if (be16toh(header.version) != FILEVER) {
 		warnx("%s: unsupported file version: %u\n",
 				inputfn, be16toh(header.version));
-		goto errout;
+		return 1;
 	}
 
 	memcpy(nonce, header.nonce, 16);
 	chunklen = be64toh(header.chunklen);
 
 
-
 	/* read password */
 	if (read_pass_fn(conf->passfn, passwd, sizeof(passwd),
 			"Password: ", NULL) == -1)
-		goto errout;	/* read_pass_fn is verbose */
+		return 1;	/* read_pass_fn is verbose */
 
 
 	/* initialize cryptography */
@@ -368,7 +348,7 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		else
 			warn("%s: can't read header mac", inputfn);
 
-		goto errout;
+		return 1;
 	}
 	poly1305_serpent_authdata(&polyctx,
 			(uint8_t*)&header, sizeof(struct header),
@@ -376,12 +356,12 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 	next_nonce(nonce);
 	if (!ctiseq(mac, check, 16)) {
 		warnx("%s: corrupt header or wrong password", inputfn);
-		goto errout;
+		return 1;
 	}
 
 
 	/* allocate chunk buffer */
-	buffer = malloc(chunklen + 16);
+	buffer = buffer_alloc(chunklen + 16);
 	if (buffer == NULL) {
 		warn("can't allocate memory");
 		return 1;
@@ -393,13 +373,13 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		out = fopen(outputfn, conf->force ? "w" : "wx");
 		if (out == NULL) {
 			warn("%s: can't open output file", outputfn);
-			goto errout;
+			return 1;
 		}
 	}
 
 	/* decryption loop */
 	do {
-		n = fread(buffer, 1, chunklen+16, in);
+		n = fread(buffer->data, 1, chunklen+16, in);
 		if (n < 16) {
 			/* is this an error or is the file damaged? */
 			if (ferror(in))
@@ -407,66 +387,44 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 			else
 				warnx("%s: incomplete chunk, file is damaged", inputfn);
 
-			goto errout;
+			return 1;
 		}
 
 		/* set n to the data length in this chunk */
 		n -= 16;
 
-		poly1305_serpent_authdata(&polyctx, buffer, n, nonce, check);
+		poly1305_serpent_authdata(&polyctx, buffer->data, n, nonce, check);
 		next_nonce(nonce);
-		if (!ctiseq(buffer+n, check, 16)) {
+		if (!ctiseq(buffer->data+n, check, 16)) {
 			warnx("%s: WARNING, file was modified!", inputfn);
-			goto errout;
+			return 1;
 		}
 
-		ctr_serpent_crypt(&ctrctx, buffer, buffer, n);
+		ctr_serpent_crypt(&ctrctx, buffer->data, buffer->data, n);
 
-		if (fwrite(buffer, 1, n, out) != n) {
+		if (fwrite(buffer->data, 1, n, out) != n) {
 			warn("%s: can't write to output file", outputfn);
-			goto errout;
+			return 1;
 		}
 	} while (n == chunklen);
 
 	/* check for input error */
 	if (ferror(in)) {
 		warn("%s: can't read from input file", inputfn);
-		goto errout;
+		return 1;
 	}
-
 	
-	burn(buffer, chunklen+16);
-	free(buffer);
-
-	if (in != stdin)
-		fclose(in);
-	if (out != stdout)
-		fclose(out);
 	return 0;
-
-errout:
-	if (in && in != stdin)
-		fclose(in);
-	if (out && out != stdout)
-		fclose(out);
-
-	if (buffer != NULL) {
-		burn(buffer, chunklen+16);
-		free(buffer);
-	}
-
-	/* XXX delete output file */
-
-	return 1;
 }
 
 int
 show(const char *inputfn, const struct config *conf)
 {
-	FILE *in = stdin;
+	cu_fclose FILE *in = stdin;
+
+	cu_freebuffer struct buffer *buffer = NULL;
 
 	struct header header;
-	uint8_t *buffer = NULL;
 	size_t n;
 
 	uint64_t chunklen;
@@ -477,7 +435,7 @@ show(const char *inputfn, const struct config *conf)
 		in = fopen(inputfn, "r");
 		if (in == NULL) {
 			warn("%s: can't open input file", inputfn);
-			goto errout;
+			return 1;
 		}
 	}
 
@@ -488,12 +446,12 @@ show(const char *inputfn, const struct config *conf)
 			warnx("%s: file too short, can't read header", inputfn);
 		else
 			warn("%s: can't read header", inputfn);
-		goto errout;
+		return 1;
 	}
 
 	if (memcmp(header.magic, "VENOM", 5) != 0) {
 		warnx("%s: not a venom file", inputfn);
-		goto errout;
+		return 1;
 	}
 
 
@@ -502,7 +460,7 @@ show(const char *inputfn, const struct config *conf)
 	if (be16toh(header.version) != FILEVER) {
 		warnx("%s: unsupported file version: %u",
 			inputfn, be16toh(header.version));
-		goto errout;
+		return 1;
 	}
 
 	chunklen = be64toh(header.chunklen);
@@ -518,59 +476,43 @@ show(const char *inputfn, const struct config *conf)
 			warnx("%s: file too short, can't read header mac", inputfn);
 		else
 			warn("%s: can't read header mac", inputfn);
-		goto errout;
+		return 1;
 	}
 
 	printf("header mac: ");
 	printhex(stdout, mac, 16);
 
 	if (conf->verbose > 0) {
-		buffer = malloc(chunklen+16);
+		buffer = buffer_alloc(chunklen+16);
 		if (buffer == NULL) {
 			warn("can't allocate memory");
-			goto errout;
+			return 1;
 		}
 
 		do {
-			n = fread(buffer, 1, chunklen+16, in);
+			n = fread(buffer->data, 1, chunklen+16, in);
 			if (n < 16) {
 				if (feof(in))
 					warnx("%s: file too short, can't read chunk", inputfn);
 				else
 					warn("%s: error reading chunk", inputfn);
-				goto errout;
+				return 1;
 			}
 
 			n -= 16;
 
 			printf("chunk mac: ");
-			printhex(stdout, buffer+n, 16);
+			printhex(stdout, buffer->data+n, 16);
 		} while (n == chunklen);
 
 		if (ferror(in)) {
 			warn("%s: can't read input file", inputfn);
-			goto errout;
+			return 1;
 		}
 	}
 
-	if (buffer != NULL) {
-		burn(buffer, chunklen+16);
-		free(buffer);
-	}
-	if (in != stdin)
-		fclose(in);
 
 	return 0;
-
-errout:
-	if (buffer != NULL) {
-		burn(buffer, chunklen+16);
-		free(buffer);
-	}
-	if (in && in != stdin)
-		fclose(in);
-
-	return 1;
 }
 
 

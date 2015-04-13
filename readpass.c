@@ -7,6 +7,58 @@
 #include <err.h>
 
 #include "utils.h"
+#include "cleanup.h"
+
+
+/*
+ * terminal code for read_pass
+ */
+
+struct terminal {
+	int		 fd;
+	int		 istty;
+	struct termios	 orig_setup;
+};
+
+#define cu_resetterm	do_cleanup(reset_terminal)
+
+static int
+setup_terminal(struct terminal *term, FILE *stream)
+{
+	struct termios setup;
+
+	term->fd = fileno(stream);
+	term->istty = isatty(term->fd);
+
+	if (term->istty) {
+		if (tcgetattr(term->fd, &setup) == -1) {
+			warn("can't read terminal attributes");
+			return -1;
+		}
+
+		memcpy(&term->orig_setup, &setup, sizeof(struct termios));
+
+		setup.c_lflag &= ~ECHO;
+		setup.c_lflag |= ECHONL;
+
+		if (tcsetattr(term->fd, TCSANOW, &setup) == -1) {
+			warn("can't write terminal attributes");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static void
+reset_terminal(struct terminal *term)
+{
+	/* just restore terminal setup if it is a tty */
+	if (term->istty)
+		tcsetattr(term->fd, TCSANOW, &term->orig_setup);
+	/* XXX better use TCSAFLUSH? */
+}
+
 
 
 /*
@@ -64,49 +116,31 @@ read_line(uint8_t *out, size_t max, FILE *stream)
 int
 read_pass(FILE *fp, uint8_t *passwd, size_t max, const char *promptA, const char *promptB)
 {
-	uint8_t		 confirm[max];
+	cu_resetterm struct terminal	term;
 
-	int		 fp_fd, fp_istty;
+	uint8_t	 confirm[max];
 
-	struct termios	 term, term_orig;
-	int		 passlen;
-	int		 rc;
+	int	 passlen;
+	int	 rc;
 
-
-	fp_fd = fileno(fp);
-	fp_istty = isatty(fp_fd);
-
-	if (fp_istty) {
-		if (tcgetattr(fp_fd, &term) == -1) {
-			warn("can't read terminal attributes");
-			return -1;
-		}
-
-		memcpy(&term_orig, &term, sizeof(struct termios));
-		term.c_lflag &= ~ECHO;
-		term.c_lflag |= ECHONL;
-
-		if (tcsetattr(fp_fd, TCSANOW, &term) == -1) {
-			warn("can't write terminal attributes");
-			return -1;
-		}
-	}
+	if (setup_terminal(&term, fp) == -1)
+		return -1;
 
 	for (;;) {
 		do {
-			if (fp_istty && promptA)
+			if (term.istty && promptA)
 				fprintf(stderr, "%s", promptA);
 
 			passlen = read_line(passwd, max, fp);
 			if (passlen == -1) {
 				warn("can't read password");
-				goto errout;
+				return -1;
 			}
 			if (passlen > max) {
 				/* without a tty this is fatal */
-				if (!fp_istty) {
+				if (!term.istty) {
 					warnx("password to long");
-					goto errout;
+					return -1;
 				}
 				fprintf(stderr, "password to long - please try again\n");
 			}
@@ -114,16 +148,16 @@ read_pass(FILE *fp, uint8_t *passwd, size_t max, const char *promptA, const char
 
 
 		/* need a confirmation? */
-		if (promptB == NULL || !fp_istty)
+		if (promptB == NULL || !term.istty)
 			break;
 
-		if (fp_istty)
+		if (term.istty)
 			fprintf(stderr, "%s", promptB);
 
 		rc = read_line(confirm, max, fp);
 		if (rc == -1) {
 			warn("can't read confirmation");
-			goto errout;
+			return -1;
 		}
 
 		if (memcmp(passwd, confirm, max) == 0)
@@ -132,18 +166,7 @@ read_pass(FILE *fp, uint8_t *passwd, size_t max, const char *promptA, const char
 		fprintf(stderr, "Passwords do not match, please try again\n");
 	}
 
-	/* reset terminal */
-	if (fp_istty)
-		tcsetattr(fp_fd, TCSANOW, &term_orig);
-
 	return passlen;
-
-errout:
-	/* XXX better use TCSAFLUSH? */
-	if (fp_istty)
-		tcsetattr(fp_fd, TCSANOW, &term_orig);
-
-	return -1;
 }
 
 int

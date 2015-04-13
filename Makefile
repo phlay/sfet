@@ -11,7 +11,7 @@ AS = nasm
 ASFLAGS = -Ox -f elf64
 
 
-OBJ = utils.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o readpass.o venom.o burnstack.o burn.o
+OBJ = utils.o cleanup.o buffer.o burn.o burnstack.o readpass.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o venom.o
 
 ifeq ($(STATIC), yes)
 	LDFLAGS += -static

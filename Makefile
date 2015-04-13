@@ -11,7 +11,7 @@ AS = nasm
 ASFLAGS = -Ox -f elf64
 
 
-OBJ = utils.o cleanup.o buffer.o burn.o burnstack.o readpass.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o venom.o
+OBJ = utils.o cleanup.o buffer.o burnstack.o readpass.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o venom.o
 
 ifeq ($(STATIC), yes)
 	LDFLAGS += -static
@@ -23,9 +23,9 @@ endif
 
 ifeq ($(USE_ASM_X86_64), yes)
 	CFLAGS += -DUSE_ASM_X86_64
-	OBJ += serpent-x86-64.o poly1305-x86-64.o
+	OBJ += serpent-x86-64.o poly1305-x86-64.o burn-x86-64.o
 else
-	OBJ += poly1305.o
+	OBJ += poly1305.o burn.o
 endif
 
 ifeq ($(USE_ASM_AVX), yes)

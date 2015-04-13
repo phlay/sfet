@@ -1,7 +1,10 @@
-#define _FILE_OFFSET_BITS	64
+#ifdef __linux
+  #define _FILE_OFFSET_BITS	64
+  #include <sys/prctl.h>
+#endif
 
+#include <sys/resource.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -25,9 +28,6 @@
 
 #define ITERATIONS	256000
 #define PASSWD_SRC	"/dev/tty"
-
-#define MODE_ENC	(S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH)
-#define MODE_DEC	(S_IRUSR|S_IWUSR)
 
 #define VERSION		"pre3.0-0"
 #define FILEVER		7
@@ -581,9 +581,37 @@ main(int argc, char *argv[])
 	const char *outputfn = "-";
 
 	struct config conf;
-	char mode = 'd';
 	int option;
 	int rval = 1;
+
+	enum {
+		MODE_ENCRYPT,
+		MODE_DECRYPT,
+		MODE_SHOW,
+	} mode;
+
+
+	/*
+	 * set core limit to 0, which disables core dumps on most unix
+	 * systems.
+	 *
+	 * please note: this does not work for linux, if a pipe is being used
+	 * for core_pattern (like systemd-coredump in a typical systemd setup).
+	 * a hack wourd be to set the core limit to 1, but we use the
+	 * 'official' method with prctl on linux, see below.
+	 */
+	if (setrlimit(RLIMIT_CORE, &(struct rlimit){0, 0}) == -1)
+		err(1, "cat't disable core dumps via setrlimit()");
+
+#ifdef __linux
+	/* disable core dumps under linux */
+	if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) == -1)
+		err(1, "can't disable core dumps");
+#endif
+
+	/* lock memory */
+	if (mlockall(MCL_CURRENT|MCL_FUTURE) == -1)
+		err(1, "can't lock memory");
 
 	/* set default config values */
 	conf.verbose = 0;
@@ -591,6 +619,9 @@ main(int argc, char *argv[])
 	conf.iterations = ITERATIONS;
 	conf.chunklen = CHUNKLEN;
 	conf.passfn = PASSWD_SRC;
+
+	mode = MODE_DECRYPT;
+
 
 	/* parse parameters */
 	while ((option = getopt(argc, argv, "hVedsvfi:c:p:")) != -1) {
@@ -627,9 +658,15 @@ main(int argc, char *argv[])
 			exit(0);
 
 		case 'e':
+			mode = MODE_ENCRYPT;
+			break;
+
 		case 'd':
+			mode = MODE_DECRYPT;
+			break;
+
 		case 's':
-			mode = option;
+			mode = MODE_SHOW;
 			break;
 
 		default:
@@ -661,19 +698,15 @@ main(int argc, char *argv[])
 			errx(1, "%s: output file already exists, use -f to overwrite", outputfn);
 	}
 
-	/* lock memory */
-	if (mlockall(MCL_CURRENT|MCL_FUTURE) == -1)
-		err(1, "can't lock memory");
-
 	/* now do our job */
 	switch (mode) {
-	case 'e':
+	case MODE_ENCRYPT:
 		rval = encrypt(inputfn, outputfn, &conf);
 		break;
-	case 'd':
+	case MODE_DECRYPT:
 		rval = decrypt(inputfn, outputfn, &conf);
 		break;
-	case 's':
+	case MODE_SHOW:
 		rval = show(inputfn, &conf);
 		break;
 	}

@@ -72,6 +72,7 @@ test-venom: venom
 			check.bin ; \
 		cmp check.bin test-files/test_$${pat}_$${size}.bin ; \
 	done done done
+	@rm -f check.bin
 
 
 # test modules separately

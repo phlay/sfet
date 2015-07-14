@@ -21,6 +21,10 @@ ifeq ($(HAVE_GETRANDOM), yes)
 	CFLAGS += -DHAVE_GETRANDOM
 endif
 
+ifeq ($(USE_DEV_RANDOM), yes)
+	CFLAGS += -DUSE_DEV_RANDOM
+endif
+
 ifeq ($(USE_ASM_X86_64), yes)
 	CFLAGS += -DUSE_ASM_X86_64
 	OBJ += serpent-x86-64.o poly1305-x86-64.o burn-x86-64.o

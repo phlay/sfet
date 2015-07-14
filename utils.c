@@ -73,7 +73,11 @@ secrand(void *buf, size_t len)
 		return -1;
 
 	/* try to read all random data without blocking */
+#ifdef USE_DEV_RANDOM
 	n = getrandom(ptr, len, GRND_RANDOM|GRND_NONBLOCK);
+#else
+	n = getrandom(ptr, len, GRND_NONBLOCK);
+#endif
 	if (n == -1)
 		return -1;
 	if (n == len)

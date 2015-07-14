@@ -11,6 +11,10 @@ MTUNE=generic
 #
 HAVE_GETRANDOM=no
 
+# use /dev/random instead of /dev/urandom
+#
+USE_DEV_RANDOM=no
+
 # enable x86_64 assembly code (only slightly faster than C at the moment)
 #
 USE_ASM_X86_64=no

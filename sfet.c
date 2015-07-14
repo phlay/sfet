@@ -32,7 +32,7 @@
 #define PASSWD_SRC	"/dev/tty"
 
 #define VERSION		"pre3.0-0"
-#define FILEVER		7
+#define FILEVER		8
 #define PASSLEN		512
 #define CHUNKLEN	(32*1024*1024)
 
@@ -48,7 +48,7 @@ struct config {
 };
 
 struct header {
-	char	 magic[5];
+	char	 magic[4];
 	uint16_t version;
 	uint64_t iter;
 	uint8_t	 nonce[16];
@@ -75,9 +75,9 @@ printhex(FILE *fp, const uint8_t *vec, size_t n)
 static void
 printusage(FILE *fp)
 {
-	fprintf(fp, "decrypt:\tvenom [-d] [-vf] [-p <fn>] [<input>] [<output>]\n");
-	fprintf(fp, "encrypt:\tvenom -e [-vf] [-p <fn>] [-i <iter>] [-c <length>] [<input>] [<output>]\n");
-	fprintf(fp, "show metadata:\tvenom -s [-v] [<input>]\n");
+	fprintf(fp, "decrypt:\tsfet [-d] [-vf] [-p <fn>] [<input>] [<output>]\n");
+	fprintf(fp, "encrypt:\tsfet -e [-vf] [-p <fn>] [-i <iter>] [-c <length>] [<input>] [<output>]\n");
+	fprintf(fp, "show metadata:\tsfet -s [-v] [<input>]\n");
 	fprintf(fp, "\n");
 	fprintf(fp, "options:\n");
 	fprintf(fp, "  -v\t\tincrease verbosity level\n");
@@ -92,7 +92,7 @@ printusage(FILE *fp)
 static void
 printversion(FILE *fp)
 {
-	fprintf(fp, "venom %s, file version: %d\n", VERSION, FILEVER);
+	fprintf(fp, "sfet %s, file version: %d\n", VERSION, FILEVER);
 
 #if defined(USE_ASM_X86_64) || defined(USE_ASM_AVX)
 	fprintf(fp, "build with: ");
@@ -224,7 +224,7 @@ encrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 
 
 	/* create header */
-	memcpy(header.magic, "VENOM", 5);
+	memcpy(header.magic, "SFET", 4);
 	header.version = htobe16(FILEVER);
 	header.iter = htobe64(conf->iterations);
 	memcpy(header.nonce, nonce, 16);
@@ -306,8 +306,8 @@ decrypt(const char *inputfn, const char *outputfn, const struct config *conf)
 		return 1;
 	}
 
-	if (memcmp(header.magic, "VENOM", 5) != 0) {
-		warnx("%s: not a venom file", inputfn);
+	if (memcmp(header.magic, "SFET", 4) != 0) {
+		warnx("%s: not a sfet file", inputfn);
 		return 1;
 	}
 	if (be16toh(header.version) != FILEVER) {
@@ -449,13 +449,13 @@ show(const char *inputfn, const struct config *conf)
 		return 1;
 	}
 
-	if (memcmp(header.magic, "VENOM", 5) != 0) {
-		warnx("%s: not a venom file", inputfn);
+	if (memcmp(header.magic, "SFET", 4) != 0) {
+		warnx("%s: not a sfet file", inputfn);
 		return 1;
 	}
 
 
-	printf("venom file, version: %u\n", be16toh(header.version));
+	printf("sfet file, version: %u\n", be16toh(header.version));
 
 	if (be16toh(header.version) != FILEVER) {
 		warnx("%s: unsupported file version: %u",

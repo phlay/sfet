@@ -1,5 +1,5 @@
 /*
- * utils - various helper functions for venom
+ * utils - various helper functions for sfet
  *
  * Written by Philipp Lay <philipp.lay@illunis.net>
  *

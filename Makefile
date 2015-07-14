@@ -11,7 +11,7 @@ AS = nasm
 ASFLAGS = -Ox -f elf64
 
 
-OBJ = utils.o cleanup.o buffer.o burnstack.o readpass.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o venom.o
+OBJ = utils.o cleanup.o buffer.o burnstack.o readpass.o sha512.o pbkdf2-hmac-sha512.o serpent.o ctr-serpent.o poly1305-serpent.o sfet.o
 
 ifeq ($(STATIC), yes)
 	LDFLAGS += -static
@@ -37,7 +37,7 @@ endif
 .PHONY: clean all install test
 .SUFFIXES: .asm
 
-all: venom
+all: sfet
 
 ${OBJ}: config.mk
 
@@ -49,30 +49,41 @@ ${OBJ}: config.mk
 print-%:
 	@echo $*=$($*)
 
-venom: $(OBJ)
+sfet: $(OBJ)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ)
 
 clean:
-	rm -f *~ *.o venom check.bin
+	rm -f *~ *.o sfet check.bin
 	make -C test clean
 
 install: all
 	@mkdir -p $(DESTDIR)$(PREFIX)/bin
-	install -m 0755 venom $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 sfet $(DESTDIR)$(PREFIX)/bin
 
-# test venom binary
-test-venom: venom
-	@echo "test venom binary..."
+# test sfet binary
+test-sfet: sfet
+	@echo "test sfet binary..."
 	@for pass in A B C; do \
 	for pat in 0 rnd; do \
 	for size in 1 15 1048577; do \
 		echo "testing $$pass / $$pat / $$size..." ; \
-		./venom -f -p test-files/password-$${pass}.txt \
-			test-files/crypt_$${pass}_$${pat}_$${size}.venom \
+		./sfet -f -p test-files/password-$${pass}.txt \
+			test-files/crypt_$${pass}_$${pat}_$${size}.sfet \
 			check.bin ; \
 		cmp check.bin test-files/test_$${pat}_$${size}.bin ; \
 	done done done
 	@rm -f check.bin
+
+create-sfet-test: sfet
+	@echo "create sfet-binary testfiles..."
+	@for pass in A B C; do \
+	for pat in 0 rnd; do \
+	for size in 1 15 1048577; do \
+		echo "creating $$pass / $$pat / $$size..." ; \
+		./sfet -e -p test-files/password-$${pass}.txt \
+			test-files/test_$${pat}_$${size}.bin \
+			test-files/crypt_$${pass}_$${pat}_$${size}.sfet ; \
+	done done done
 
 
 # test modules separately

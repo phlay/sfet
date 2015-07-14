@@ -2,8 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <riddler.h>
-
 #include "sha512.h"
 
 #define BUFLEN		(16*1024)

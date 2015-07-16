@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
-void	burn(void *s, size_t n);
+#define NOINLINE	__attribute__((noinline))
+
+NOINLINE void	burn(void *s, size_t n);
 
 #endif

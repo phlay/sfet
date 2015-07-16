@@ -6,7 +6,7 @@
 /*
  * burn - simple function to zero a buffer, used to cover our tracks
  */
-void
+NOINLINE void
 burn(void *s, size_t n)
 {
 	uint8_t *p = (uint8_t *)s;

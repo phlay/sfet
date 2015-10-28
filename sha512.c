@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "sha512.h"
+#include "utils.h"
 
 static const uint64_t K[80] = {
 	0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL, 0xb5c0fbcfec4d3b2fULL,
@@ -54,29 +55,6 @@ static const uint64_t K[80] = {
      t = h + S1(e) + (g ^ (e & (f ^ g))) + K[i] + W[i];	\
      d += t;						\
      h  = t + S0(a) + ( ((a | b) & c) | (a & b) )
-
-
-static void
-store_be64(uint8_t *p, uint64_t x)
-{
-	p[0] = (x >> 56) & 0xff;
-	p[1] = (x >> 48) & 0xff;
-	p[2] = (x >> 40) & 0xff;
-	p[3] = (x >> 32) & 0xff;
-	p[4] = (x >> 24) & 0xff;
-	p[5] = (x >> 16) & 0xff;
-	p[6] = (x >>  8) & 0xff;
-	p[7] = (x >>  0) & 0xff;
-}
-
-static uint64_t
-load_be64(const uint8_t *p)
-{
-	return ((uint64_t)p[0] << 56) |	((uint64_t)p[1] << 48) |
-		((uint64_t)p[2] << 40) | ((uint64_t)p[3] << 32) |
-		((uint64_t)p[4] << 24) | ((uint64_t)p[5] << 16) |
-		((uint64_t)p[6] << 8) | ((uint64_t)p[7]);
-}
 
 
 static void

@@ -26,9 +26,13 @@
 #include "utils.h"
 
 
-
 #ifdef HAVE_GETRANDOM
+
+#include <sys/syscall.h>
 #include <linux/random.h>
+
+#define getrandom(buf, len, flags)	syscall(SYS_getrandom, (buf), (len), (flags))
+
 #else
 
 #define GRND_NONBLOCK	1

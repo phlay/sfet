@@ -8,8 +8,8 @@ AS = nasm
 ASFLAGS = -Ox -f elf64 -dSELFTEST
 
 
-OBJ_SHA512 = test-sha512.o sha512.o
-OBJ_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o
+OBJ_SHA512 = test-sha512.o sha512.o utils.o
+OBJ_PBKDF2 = test-pbkdf2.o printvec.o sha512.o pbkdf2-hmac-sha512.o utils.o
 OBJ_SERPENT = test-serpent.o serpent.o
 OBJ_SERPENT_AVX = test-serpent8x.o serpent.o serpent8x-avx.o
 OBJ_POLY1305 = test-poly1305.o printvec.o
